@@ -235,11 +235,13 @@ module decoder1
         // ----- U-type ----- //
             7'b0110111: begin  // lui
                 sel_rd = 1'b1;
+                use_addr = 1'b1;
                 imm = {instr[31:12], 12'b0};
             end
 
             7'b0010111: begin  // auipc
                 sel_rd = 1'b1;
+                use_addr = 1'b1;
                 imm = {instr[31:12], 12'b0};
             end
 
