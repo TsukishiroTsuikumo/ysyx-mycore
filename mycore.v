@@ -310,7 +310,7 @@ module mycore (
     rd_addr_mem_wb <= rd_addr_ex_mem;
   end
 
-  assign rd_in_wb  = (dm_ld_ex_mem != 4'b0) ? dm_rd_in : pipe_mem_wb;
+  assign rd_in_wb  = (|dm_ld_ex_mem) ? dm_rd_in : pipe_mem_wb;
   assign rd_addr_wb = rd_addr_mem_wb;
 
 endmodule

@@ -18,7 +18,7 @@ module lsu (
     localparam lhu = 3'b101;
     localparam sb  = 3'b110;
     localparam sh  = 3'b111;
-    localparam sw  = 3'b011;
+    localparam sw  = 3'b010;
 
     wire [31:0] addr_calc = lsuB + addr_imm;
     assign dm_addr = is_used ? addr_calc : 32'b0;
