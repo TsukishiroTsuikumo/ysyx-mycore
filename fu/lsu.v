@@ -18,21 +18,22 @@ module lsu (
     localparam lhu = 3'b101;
     localparam sb  = 3'b110;
     localparam sh  = 3'b111;
-    localparam sw  = 3'b110;
+    localparam sw  = 3'b011;
+
+    wire [31:0] addr_calc = lsuB + addr_imm;
+    assign dm_addr = is_used ? addr_calc : 32'b0;
 
     always @(*) begin
-        if(is_used) begin
-            
+        if (is_used) begin
             dm_out = lsuA;
-            dm_addr = lsuB + addr_imm;
-            ls_ld = 4'b0;
-            ls_st = 4'b0;
+            is_ld = 4'b0;
+            is_st = 4'b0;
 
-            case(opcode)
+            case (opcode)
                 lb: begin
                     is_ld = 4'b1;
                 end
-                lh  : begin
+                lh: begin
                     is_ld = 4'b0011;
                 end
                 lw: begin
@@ -54,9 +55,7 @@ module lsu (
                     is_st = 4'b1111;
                 end
             endcase
-        end 
-        else begin
-            dm_addr = 32'b0;
+        end else begin
             dm_out = 32'b0;
             is_ld = 4'b0;
             is_st = 4'b0;

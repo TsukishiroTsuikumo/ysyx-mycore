@@ -30,7 +30,7 @@ module reg_R
       end
     end
     else if(w1_en) begin
-      if (!w1_addr) begin
+      if (w1_addr) begin
       reg_val[w1_addr] <= w1_in;
       end
     end

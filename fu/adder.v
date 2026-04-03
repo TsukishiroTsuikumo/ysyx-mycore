@@ -13,12 +13,12 @@ module adder (
     localparam ltu = 3'b101;
     localparam geu = 3'b110;
 
-    assign wire [32:0] a_in = is_used ? {1'b0, addA} : 33'b0;
-    assign wire [32:0] b_in = is_used ? {1'b0, addB} : 33'b0;
+    wire [32:0] a_in = is_used ? {1'b0, addA} : 33'b0;
+    wire [32:0] b_in = is_used ? {1'b0, addB} : 33'b0;
 
-    assign wire sel_sub = (~opcode == 0); // if opcode is 0, it's add, otherwise it's sub
+    wire sel_sub = (opcode == 3'b111); // sub when opcode is sub encoding
 
-    assign wire [32:0] b_in_mux = sel_sub ? ~b_in : b_in;
+    wire [32:0] b_in_mux = sel_sub ? ~b_in : b_in;
     wire [33:0] sum;
 
     genvar i;
@@ -45,10 +45,10 @@ module adder (
         end
     endgenerate
 
-    assign wire ZF = (sum[31:0] == 32'b0);
-    assign wire SF = sum[31];
-    assign wire OF = (a_in[31] == b_in_mux[31]) && (sum[31] != a_in[31]);
-    assign wire CF = sum[32];
+    wire ZF = (sum[31:0] == 32'b0);
+    wire SF = sum[31];
+    wire OF = (a_in[31] == b_in_mux[31]) && (sum[31] != a_in[31]);
+    wire CF = sum[32];
 
     always @(*) begin
         case (opcode)
@@ -78,4 +78,3 @@ module fulladder (
     assign cout = (ain & bin) | (ain & cin) | (bin & cin);
 
 endmodule
-

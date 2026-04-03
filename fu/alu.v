@@ -10,8 +10,8 @@ module alu (
     localparam op_and = 2'b10;
     localparam op_xor = 2'b11;
 
-    assign wire [31:0] a_in = is_used ? aluA : 32'b0;
-    assign wire [31:0] b_in = is_used ? aluB : 32'b0;
+    wire [31:0] a_in = is_used ? aluA : 32'b0;
+    wire [31:0] b_in = is_used ? aluB : 32'b0;
 
     always @(*) begin
         case(opcode)
