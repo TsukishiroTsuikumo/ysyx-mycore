@@ -13,42 +13,19 @@ module adder (
     localparam ltu = 3'b101;
     localparam geu = 3'b110;
 
-    wire [32:0] a_in = is_used ? {1'b0, addA} : 33'b0;
-    wire [32:0] b_in = is_used ? {1'b0, addB} : 33'b0;
+    wire do_sub = (opcode == 3'b111) || (opcode == eq) || (opcode == ne) ||
+                  (opcode == lt) || (opcode == ge) || (opcode == ltu) || (opcode == geu);
 
-    wire sel_sub = (opcode == 3'b111); // sub when opcode is sub encoding
-
-    wire [32:0] b_in_mux = sel_sub ? ~b_in : b_in;
-    wire [33:0] sum;
-
-    genvar i;
-    generate
-        for(i=0;i<33;i++) begin :adder
-            if(i==0) begin
-                fulladder fa (
-                    .ain(a_in[i]),
-                    .bin(b_in_mux[i]),
-                    .cin(sel_sub),
-                    .sum(sum[i]),
-                    .cout(sum[i+1])
-                );
-            end
-            else begin
-                fulladder fa (
-                    .ain(a_in[i]),
-                    .bin(b_in_mux[i]),
-                    .cin(sum[i]),
-                    .sum(sum[i]),
-                    .cout(sum[i+1])
-                );
-            end
-        end
-    endgenerate
-
-    wire ZF = (sum[31:0] == 32'b0);
+    wire [32:0] a_ext = is_used ? {1'b0, addA} : 33'b0;
+    wire [32:0] b_ext = is_used ? {1'b0, addB} : 33'b0;
+    wire [33:0] sum_ext = do_sub ? ({1'b0, a_ext} + {1'b0, ~b_ext} + 34'd1)
+                                 : ({1'b0, a_ext} + {1'b0, b_ext});
+    wire [31:0] sum = sum_ext[31:0];
+    wire ZF = (sum == 32'b0);
     wire SF = sum[31];
-    wire OF = (a_in[31] == b_in_mux[31]) && (sum[31] != a_in[31]);
-    wire CF = sum[32];
+    wire OF = do_sub ? ((addA[31] != addB[31]) && (sum[31] != addA[31]))
+                     : ((addA[31] == addB[31]) && (sum[31] != addA[31]));
+    wire CF = sum_ext[32];
 
     always @(*) begin
         case (opcode)
@@ -62,19 +39,6 @@ module adder (
         endcase
     end
 
-    assign addC = sum[31:0];
-
-endmodule
-
-
-module fulladder (
-    input ain,
-    input bin,
-    input cin,
-    output sum,
-    output cout
-);
-    assign sum = ain ^ bin ^ cin;
-    assign cout = (ain & bin) | (ain & cin) | (bin & cin);
+    assign addC = sum;
 
 endmodule
