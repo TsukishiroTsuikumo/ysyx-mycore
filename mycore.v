@@ -12,29 +12,29 @@ module mycore (
 );
 
   // ------------------------------------------- //
-  // -- Pipe IF1: Generate PC, Predict Branch -- //
+  // -- Pipe1 IF: Generate PC, Predict Branch -- //
   // ------------------------------------------- //
 
-  wire [31:0] current_pc_if1;
+  wire [31:0] current_pc_if;
   wire [31:0] next_pc;
 
   controller controller(
-    .current_pc(current_pc_if1),
+    .current_pc(current_pc_if),
     .next_pc(next_pc),
     .ifetch(ifetch),
     .pm_addr(pm_addr_out),
-    .is_cd_jp(is_cd_jp),
-    .imm_cd_jp(imm),
-    .is_jal(is_jal),
-    .imm_jal(imm_id1_id2),
-    .isjalr(is_jalr),
-    .imm_jalr(imm_jalr),
-    .is_jp(is_jp_id2),
-    .jp_inst_pc(PC_id1_id2)
+    .is_cd_jp(is_cd_jp_ex),
+    .cd_jp_imm(imm_is_ex),
+    .is_jal(is_jal_id),
+    .jal_imm(imm_id),
+    .is_jalr(is_jalr_ex),
+    .jalr_trgt(addC),
+    .is_jp(is_jp_id_rn),
+    .jp_inst_pc(PC_id_rn)
   );
   
   // ------------------------------------------- //
-  // --------------- IF1 to IF2 ---------------- //
+  // ---------------- IF to ID ----------------- //
   // ------------------------------------------- //
 
   reg_PC PC(
@@ -42,130 +42,114 @@ module mycore (
     .reset(reset),
     .pc_en(ifetch), // from controller
     .pcw(next_pc), // from controller
-    .pcr(current_pc_if1) // to controller
+    .pcr(current_pc_if) // to controller
   );
 
-  reg [31:0] PC_if1_if2;
+  reg [31:0] PC_if_id;
 
   always @(posedge clk) begin
-    PC_if1_if2 <= current_pc;
+    PC_if_id <= current_pc_if;
   end
 
   // --------------------------------------------- //
-  // ------- Pipe2 IF2: Fetch Instruction -------- //
+  // -------- Pipe2 ID: Decode Instruction ------- //
   // --------------------------------------------- //
 
-  wire [31:0] instr = pm_rd_in; // from pm
-  
+  wire [31:0] instr;
+  assign instr_id = pm_rd_in; // from pm
 
-  // --------------------------------------------- //
-  // ---------------- IF2 to ID1 ----------------- //
-  // --------------------------------------------- //
-
-  reg [31:0] instr_if2_id1;
-  reg [31:0] PC_if2_id1;
-
-  always @(posedge clk) begin
-    instr_if2_id1 <= instr;
-    PC_if2_id1 <= PC_if1_if2;
-  end
-
-  // --------------------------------------------- //
-  // ------- Pipe3 ID1: Decode Instruction ------- //
-  // --------------------------------------------- //
-
-  wire         sel_rs1_id1;
-  wire  [4:0]  rs1_addr_id1;
-  wire         sel_rs2_id1;
-  wire  [4:0]  rs2_addr_id1;
-  wire         sel_imm_id1;
-  wire [31:0]  imm_id1;
-  wire         sel_rd_id1;
-  wire  [4:0]  rd_addr_id1;
-  wire  [2:0]  adder_op_id1;
-  wire  [1:0]  shifter_op_id1;
-  wire  [1:0]  multiplier_op_id1;
-  wire  [1:0]  divider_op_id1;
-  wire  [1:0]  alu_op_id1;
-  wire  [4:0]  use_signal_id1;
-  wire         is_jal_id1;
-  wire         is_jalr_id1;
-  wire         is_cd_jp_id1;
+  wire         sel_rs1_id;
+  wire  [4:0]  rs1_addr_id;
+  wire         sel_rs2_id;
+  wire  [4:0]  rs2_addr_id;
+  wire         sel_imm_id;
+  wire [31:0]  imm_id;
+  wire         sel_rd_id;
+  wire  [4:0]  rd_addr_id;
+  wire  [2:0]  adder_op_id;
+  wire  [1:0]  shifter_op_id;
+  wire  [1:0]  multiplier_op_id;
+  wire  [1:0]  divider_op_id;
+  wire  [1:0]  alu_op_id;
+  wire  [4:0]  use_signal_id;
+  wire         is_jal_id;
+  wire         is_jalr_id;
+  wire         is_cd_jp_id;
 
   decoder1 .decoder1 (
-    .instr(instr_if2_id1),
+    .instr(instr_id),
 
-    .sel_rs1(sel_rs1_id1),
-    .rs1_addr(rs1_addr_id1),
-    .sel_rs2(sel_rs2_id1),
-    .rs2_addr(rs2_addr_id1),
-    .sel_imm(sel_imm_id1),
-    .imm(imm_id1),
-    .rd_addr(rd_addr_id1),
-    .sel_rd(sel_rd_id1),
+    .sel_rs1(sel_rs1_id),
+    .rs1_addr(rs1_addr_id),
+    .sel_rs2(sel_rs2_id),
+    .rs2_addr(rs2_addr_id),
+    .sel_imm(sel_imm_id),
+    .imm(imm_id),
+    .rd_addr(rd_addr_id),
+    .sel_rd(sel_rd_id),
 
-    .adder_op(adder_op_id1),
-    .shifter_op(shifter_op_id1),
-    .alu_op(alu_op_id1),
-    .multiplier_op(multiplier_op_id1),
-    .divider_op(divider_op_id1),
+    .adder_op(adder_op_id),
+    .shifter_op(shifter_op_id),
+    .alu_op(alu_op_id),
+    .multiplier_op(multiplier_op_id),
+    .divider_op(divider_op_id),
 
-    .use_signal(use_signal_id1),
-    .is_jal(is_jal_id1),
-    .is_jalr(is_jalr_id1),
-    .is_cd_jp(is_cd_jp_id1)
+    .use_signal(use_signal_id),
+    .is_jal(is_jal_id),
+    .is_jalr(is_jalr_id),
+    .is_cd_jp(is_cd_jp_id)
     
   );
 
   // --------------------------------------------- //
-  // --------------- ID1 to ID2 ------------------ //
+  // ---------------- ID to RN ------------------- //
   // --------------------------------------------- //
 
-  reg   [4:0] rs1_addr_id1_id2;
-  reg   [4:0] rs2_addr_id1_id2;
-  reg   [4:0] rd_addr_id1_id2;
-  reg  [31:0] imm_id1_id2;
-  reg         sel_rs1_id1_id2;
-  reg         sel_rs2_id1_id2;
-  reg         sel_rd_id1_id2;
-  reg         sel_imm_id1_id2;
-  reg   [4:0] use_sig_id1_id2;
-  reg   [2:0] adder_op_id1_id2;
-  reg   [1:0] shifter_op_id1_id2;
-  reg   [1:0] multiplier_op_id1_id2;
-  reg   [1:0] divider_op_id1_id2;
-  reg   [1:0] alu_op_id1_id2;
-  reg         is_jal_id1_id2;
-  reg         is_jalr_id1_id2;
-  reg         is_cd_jp_id1_id2;
-  reg  [31:0] PC_id1_id2;
+  reg   [4:0] rs1_addr_id_rn;
+  reg   [4:0] rs2_addr_id_rn;
+  reg   [4:0] rd_addr_id_rn;
+  reg  [31:0] imm_id_rn;
+  reg         sel_rs1_id_rn;
+  reg         sel_rs2_id_rn;
+  reg         sel_rd_id_rn;
+  reg         sel_imm_id_rn;
+  reg   [4:0] use_sig_id_rn;
+  reg   [2:0] adder_op_id_rn;
+  reg   [1:0] shifter_op_id_rn;
+  reg   [1:0] multiplier_op_id_rn;
+  reg   [1:0] divider_op_id_rn;
+  reg   [1:0] alu_op_id_rn;
+  reg         is_jal_id_rn;
+  reg         is_jalr_id_rn;
+  reg         is_cd_jp_id_rn;
+  reg  [31:0] PC_id_rn;
 
   always @(posedge clk) begin
-    rs1_addr_id1_id2      <= rs1_addr_id1;
-    rs2_addr_id1_id2      <= rs2_addr_id1;
-    rd_addr_id1_id2       <= rd_addr_id1;
-    imm_id1_id2           <= imm_id1;
-    sel_rs1_id1_id2       <= sel_rs1_id1;
-    sel_rs2_id1_id2       <= sel_rs2_id1;
-    sel_rd_id1_id2        <= sel_rd_id1;
-    sel_imm_id1_id2       <= sel_imm_id1;
-    use_sig_id1_id2       <= use_signal_id1;
-    adder_op_id1_id2      <= adder_op_id1;
-    shifter_op_id1_id2    <= shifter_op_id1;
-    alu_op_id1_id2        <= alu_op_id1;
-    multiplier_op_id1_id2 <= multiplier_op_id1;
-    divider_op_id1_id2    <= divider_op_id1;
-    is_jal_id1_id2        <= is_jal_id1;
-    is_jalr_id1_id2       <= is_jalr_id1;
-    is_cd_jp_id1_id2      <= is_cd_jp_id1;
-    PC_id1_id2            <= pc_id1;
+    rs1_addr_id_rn      <= rs1_addr_id;
+    rs2_addr_id_rn      <= rs2_addr_id;
+    rd_addr_id_rn       <= rd_addr_id;
+    imm_id_rn           <= imm_id;
+    sel_rs1_id_rn       <= sel_rs1_id;
+    sel_rs2_id_rn       <= sel_rs2_id;
+    sel_rd_id_rn        <= sel_rd_id;
+    sel_imm_id_rn       <= sel_imm_id;
+    use_sig_id_rn       <= use_signal_id;
+    adder_op_id_rn      <= adder_op_id;
+    shifter_op_id_rn    <= shifter_op_id;
+    alu_op_id_rn        <= alu_op_id;
+    multiplier_op_id_rn <= multiplier_op_id;
+    divider_op_id_rn    <= divider_op_id;
+    is_jal_id_rn        <= is_jal_id;
+    is_jalr_id_rn       <= is_jalr_id;
+    is_cd_jp_id_rn      <= is_cd_jp_id;
+    PC_id_rn            <= PC_if_id;
   end
 
   // --------------------------------------------- //
-  // ------- Pipe4 ID2: Register Renaming -------- //
+  // -------- Pipe3 RN: Register Renaming -------- //
   // --------------------------------------------- //
 
-  assign wire is_jp_id2 = is_jal_id1_id2 | is_jalr_id1_id2 | is_cd_jp_id1_id2;
+  assign wire is_jp_rn = is_jal_id_rn | is_jalr_id_rn | is_cd_jp_id_rn;
 
   wire   [4:0]  rs1_rename_addr;
   wire   [4:0]  rs2_rename_addr;
@@ -175,9 +159,9 @@ module mycore (
   wire   [4:0]  w1_addr_wb;
 
   rename rename(
-    .rs1_addr(rs1_addr_id1_id2),
-    .rs2_addr(rs2_addr_id1_id2),
-    .rd_addr(rd_addr_id1_id2),
+    .rs1_addr(rs1_addr_id_rn),
+    .rs2_addr(rs2_addr_id_rn),
+    .rd_addr(rd_addr_id_rn),
     .rs1_rename_addr(rs1_rename_addr),
     .rs2_rename_addr(rs2_rename_addr),
     .rd_rename_addr(rd_rename_addr),
@@ -190,7 +174,7 @@ module mycore (
   );
 
   // --------------------------------------------- //
-  // ---------------- ID2 to ID3 ----------------- //
+  // ----------------- RN to DP ------------------ //
   // --------------------------------------------- //
 
   wire [32:0] r1_out;
@@ -208,54 +192,62 @@ module mycore (
     .w1_in(w1_in)
   );
 
-  reg  [31:0] imm_id2_ex1;
-  reg         sel_rs1_id2_ex1;
-  reg         sel_rs2_id2_ex1;
-  reg         sel_rd_id2_ex1;
-  reg         sel_imm_id2_ex1;
-  reg   [4:0] use_sig_id2_ex1;
-  reg   [2:0] adder_op_id2_ex1;
-  reg   [1:0] shifter_op_id2_ex1;
-  reg   [1:0] multiplier_op_id2_ex1;
-  reg   [1:0] divider_op_id2_ex1;
-  reg   [1:0] alu_op_id2_ex1;
-  reg         is_jal_id2_ex1;
-  reg         is_jalr_id2_ex1;
-  reg         is_cd_jp_id2_ex1;
+  reg  [31:0] imm_rn_dp;
+  reg         sel_rs1_rn_dp;
+  reg         sel_rs2_rn_dp;
+  reg         sel_rd_rn_dp;
+  reg         sel_imm_rn_dp;
+  reg   [4:0] use_sig_rn_dp;
+  reg   [2:0] adder_op_rn_dp;
+  reg   [1:0] shifter_op_rn_dp;
+  reg   [1:0] multiplier_op_rn_dp;
+  reg   [1:0] divider_op_rn_dp;
+  reg   [1:0] alu_op_rn_dp;
+  reg         is_jal_rn_dp;
+  reg         is_jalr_rn_dp;
+  reg         is_cd_jp_rn_dp;
 
   always @(posedge clk) begin
-    imm_id2_ex1           <= imm_id1_id2;
-    sel_rs1_id2_ex1       <= sel_rs1_id1_id2;
-    sel_rs2_id2_ex1       <= sel_rs2_id1_id2;
-    sel_rd_id2_ex1        <= sel_rd_id1_id2;
-    sel_imm_id2_ex1       <= sel_imm_id1_id2;
-    use_sig_id2_ex1       <= use_signal_id1_id2;
-    adder_op_id2_ex1      <= adder_op_id1_id2;
-    shifter_op_id2_ex1    <= shifter_op_id1_id2;
-    alu_op_id2_ex1        <= alu_op_id1_id2;
-    multiplier_op_id2_ex1 <= multiplier_op_id1_id2;
-    divider_op_id2_ex1    <= divider_op_id1_id2;
-    is_jal_id2_ex1        <= is_jal_id1_id2;
-    is_jalr_id2_ex1       <= is_jalr_id1_id2;
-    is_cd_jp_id2_ex1      <= is_cd_jp_id1_id2;
+    imm_rn_dp           <= imm_id_rn;
+    sel_rs1_rn_dp       <= sel_rs1_id_rn;
+    sel_rs2_rn_dp       <= sel_rs2_id_rn;
+    sel_rd_rn_dp        <= sel_rd_id_rn;
+    sel_imm_rn_dp       <= sel_imm_id_rn;
+    use_sig_rn_dp       <= use_signal_id_rn;
+    adder_op_rn_dp      <= adder_op_id_rn;
+    shifter_op_rn_dp    <= shifter_op_id_rn;
+    alu_op_rn_dp        <= alu_op_id_rn;
+    multiplier_op_rn_dp <= multiplier_op_id_rn;
+    divider_op_rn_dp    <= divider_op_id_rn;
+    is_jal_rn_dp        <= is_jal_id_rn;
+    is_jalr_rn_dp       <= is_jalr_id_rn;
+    is_cd_jp_rn_dp      <= is_cd_jp_id_rn;
   end
 
   // --------------------------------------------- //
-  // ------- Pipe5 ID3: Issue Instruction -------- //
+  // ------ Pipe4 DP: Dispatch Instruction ------- //
   // --------------------------------------------- //
 
 
   // --------------------------------------------- //
-  // ---------------- ID3 to EX ------------------ //
+  // ----------------- DP to IS ------------------ //
+  // --------------------------------------------- //
+
+  // --------------------------------------------- //
+  // -------- Pipe5 IS: Issue Instruction -------- //
+  // --------------------------------------------- //
+
+  // --------------------------------------------- //
+  // ----------------- IS to EX ------------------ //
   // --------------------------------------------- //
 
   // --------------------------------------------- //
   // ------- Pipe6 EX: Execute Instruction ------- //
   // --------------------------------------------- //
 
-
-  assign wire [31:0] rs1 = r1_out;
-  assign wire [31:0] rs2 = sel_imm ? imm : r2_out;
+  wire [31:0] rs1, rs2;
+  assign rs1 = is_jalr_is_ex ? PC_is_ex : r1_out;
+  assign rs2 = sel_imm ? imm_is_ex : r2_out;
 
   wire [31:0] aluC;
   wire [31:0] addC;
@@ -271,13 +263,14 @@ module mycore (
     .aluC(aluC)
   );
 
+  wire is_cd_jp_ex;
   adder adder_1(
     .is_used(use_adder),
     .opcode(adder_op),
     .addA(rs1),
     .addB(rs2),
     .addC(addC),
-    .branch_cd(is_cd_jp)
+    .branch_cd(is_cd_jp_ex)
   );
 
   shifter shifter_1(
@@ -358,7 +351,7 @@ module mycore (
 
 
   // ----------------------------------------------- //
-  // ---- Pipe8 WB: Write back to register file ---- //
+  // ------- Pipe8 WB: Write back and commit ------- //
   // ----------------------------------------------- //
 
   wire [31:0] rd_in_wb = dm_ld_ex_mem ? dm_rd_in : pipe_mem_wb;

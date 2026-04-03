@@ -37,7 +37,7 @@ module shifter (
 
     assign wire [31:0] sll0 = {rst1[30:0], 1'b0};
     assign wire [31:0] srl0 = {1'b0, rst1[31:1]};
-    assign wire [31:0] sra0 = {1{rst1[31]}, rst1[31:1]};
+    assign wire [31:0] sra0 = {rst1[31], rst1[31:1]};
     assign shfC = sel_bit[0] ? (opcode == sll ? sll0 : (opcode == srl ? srl0 : sra0)) : rst1;
 
 endmodule

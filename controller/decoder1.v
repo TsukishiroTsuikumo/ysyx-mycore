@@ -25,9 +25,12 @@ module decoder1
     output  reg         is_cd_jp
 );
 
-    assign wire func7 = instr[31:25];
-    assign wire func3 = instr[14:12];
-    assign wire opcode = instr[6:0];
+    wire [6:0] func7;
+    wire [2:0] func3;
+    wire [6:0] opcode;
+    assign func7 = instr[31:25];
+    assign func3 = instr[14:12];
+    assign opcode = instr[6:0];
     
     assign rs1_addr = instr[19:15];
     assign rs2_addr = instr[24:20];
@@ -40,7 +43,7 @@ module decoder1
         sel_rd  = 1'b0;
         sel_imm = 1'b0;
         imm     = 32'b0;
-        addrer_op = 3'b000;
+        adder_op = 3'b000;
         shifter_op = 1'b0;
         multiplier_op = 1'b0;
         divider_op = 1'b0;

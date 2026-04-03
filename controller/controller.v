@@ -6,11 +6,11 @@ module controller(
 
     // Control Signal
     input           is_cd_jp,
-    input   [31:0]  imm_cd_jp,
+    input   [31:0]  cd_jp_imm,
     input           is_jal,
-    input   [31:0]  imm_jal,
+    input   [31:0]  jal_imm,
     input           is_jalr,
-    input   [31:0]  imm_jalr,
+    input   [31:0]  jalr_trgt,
     input           is_jp,
     input   [31:0]  jp_inst_pc
 );
@@ -23,25 +23,32 @@ module controller(
         end
     end
     
-    assign wire btb_hit = 1'b0;
-    assign wire [32:0] btb_target = 32'b0;
-    reg [31:0]  npc;
+    wire btb_hit;
+    wire [31:0] btb_target;
+    wire [31:0] npc_jal;
+    wire [31:0] npc_4;
+    assign npc1 = current_pc + cd_jp_imm;
+    assign npc_jal = current_pc + jal_imm;
+    assign npc_4 = current_pc + 4;
+    assign btb_hit = 1'b0;
+    assign btb_target = 32'b0;
     // next pc
+    reg [31:0] npc;
     always @(*) begin
         if(is_cd_jp) begin
-            npc = current_pc + imm_cd_jp;
+            npc = npc1;
         end
         else if(is_jalr) begin
-            npc = current_pc + imm_jalr;
+            npc = jalr_trgt;
         end
         else if(is_jal) begin
-            npc = current_pc + imm_jal;
+            npc = npc_jal;
         end
         else if(btb_hit) begin
             npc = btb_target;
         end
         else begin
-            npc = current_pc + 4;
+            npc = npc_4;
         end
     end
 
