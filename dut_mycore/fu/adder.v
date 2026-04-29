@@ -82,4 +82,3 @@ module fulladder (
     assign cout = (ain & bin) | (ain & cin) | (bin & cin);
 
 endmodule
-

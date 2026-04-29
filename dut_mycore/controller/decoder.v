@@ -1,8 +1,8 @@
-module decoder1
+module decoder
 (   input [31:0] instr,
 
     // Oprand
-    output              sel_rs1
+    output              sel_rs1,
     output       [4:0]  rs1_addr,
     output  reg         sel_rs2,
     output       [4:0]  rs2_addr,
@@ -51,6 +51,8 @@ module decoder1
         use_shifter = 1'b0;
         use_multiplier = 1'b0;
         use_divider = 1'b0;
+        use_addr = 1'b0;
+        use_alu = 1'b0;
         is_jal = 1'b0;
         is_jalr = 1'b0;
         is_cd_jp = 1'b0;
@@ -101,7 +103,7 @@ module decoder1
                 else begin
                     case(func3)
                         3'b000: begin
-                            use_addr = 1b'1;
+                            use_addr = 1'b1;
                             if(func7 == 7'b0000000) begin
                                 adder_op = 3'b000; // add
                             end

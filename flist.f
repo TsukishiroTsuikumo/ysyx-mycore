@@ -1,0 +1,15 @@
+./dut_mycore/mycore.v
+./dut_mycore/reg/reg_PC.v
+./dut_mycore/reg/reg_R.v
+./dut_mycore/reg/reg_flag.v
+./dut_mycore/reg/pipe.v
+./dut_mycore/controller/decoder.v
+./dut_mycore/controller/controller.v
+./dut_mycore/controller/rename.v
+./dut_mycore/mem/icache.v
+./dut_mycore/fu/shifter.v
+./dut_mycore/fu/mutiplier.v
+./dut_mycore/fu/alu.v
+./dut_mycore/fu/lsu.v
+./dut_mycore/fu/adder.v
+./dut_mycore/fu/divider.v

@@ -27,4 +27,4 @@ module reg_flag
         end
     end
 
-endmodule   
+endmodule

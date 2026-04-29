@@ -77,7 +77,7 @@ module mycore (
   wire         is_jalr_id;
   wire         is_cd_jp_id;
 
-  decoder1 .decoder1 (
+  decoder decoder(
     .instr(instr_id),
 
     .sel_rs1(sel_rs1_id),
@@ -150,7 +150,8 @@ module mycore (
   // -------- Pipe3 RN: Register Renaming -------- //
   // --------------------------------------------- //
 
-  assign wire is_jp_rn = is_jal_id_rn | is_jalr_id_rn | is_cd_jp_id_rn;
+  wire is_jp_rn;
+  assign is_jp_rn = is_jal_id_rn | is_jalr_id_rn | is_cd_jp_id_rn;
 
   wire   [4:0]  rs1_rename_addr;
   wire   [4:0]  rs2_rename_addr;
@@ -209,7 +210,6 @@ module mycore (
   reg         is_cd_jp_rn_dp;
   reg  [31:0] PC_rn_dp;
   reg [4:0] rd_addr_rn_dp;
-  reg [31:0] 
 
   always @(posedge clk) begin
     imm_rn_dp           <= imm_id_rn;
@@ -359,10 +359,10 @@ module mycore (
   // ------------- MEM: Memory Access -------------- //
   // ----------------------------------------------- //
 
-  assign wire dm_ld = dm_ld_ex_mem;
-  assign wire dm_st = dm_st_ex_mem;
-  assign wire dm_addr_out = dm_addr_ex_mem;
-  assign wire dm_wr_out = pipe_ex_mem;
+  assign dm_ld = dm_ld_ex_mem;
+  assign dm_st = dm_st_ex_mem;
+  assign dm_addr_out = dm_addr_ex_mem;
+  assign dm_wr_out = pipe_ex_mem;
 
   // ----------------------------------------------- //
   // ------------------ MEM to WB ------------------ //
@@ -382,7 +382,6 @@ module mycore (
 
   assign w1_addr_wb = rd_addr_mem_wb;
   assign w1_value = ld_valid ? dm_rd_in : pipe_mem_wb;
-  assign w1_en_wb = 
 
 
 

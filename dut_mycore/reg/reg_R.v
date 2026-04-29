@@ -37,6 +37,3 @@ module reg_R
   end
 
 endmodule
-
-
-  
