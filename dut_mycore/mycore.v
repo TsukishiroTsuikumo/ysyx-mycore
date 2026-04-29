@@ -9,6 +9,7 @@ module mycore (
   output  [31:0]  dm_addr_out,
   output	 [3:0]  dm_ld, // load enable signal
   output	 [3:0]  dm_st, // store enable signal
+  input           ld_valid
 );
 
   // ------------------------------------------- //
@@ -206,6 +207,9 @@ module mycore (
   reg         is_jal_rn_dp;
   reg         is_jalr_rn_dp;
   reg         is_cd_jp_rn_dp;
+  reg  [31:0] PC_rn_dp;
+  reg [4:0] rd_addr_rn_dp;
+  reg [31:0] 
 
   always @(posedge clk) begin
     imm_rn_dp           <= imm_id_rn;
@@ -222,6 +226,7 @@ module mycore (
     is_jal_rn_dp        <= is_jal_id_rn;
     is_jalr_rn_dp       <= is_jalr_id_rn;
     is_cd_jp_rn_dp      <= is_cd_jp_id_rn;
+    PC_rn_dp            <= PC_if_id;
   end
 
   // --------------------------------------------- //
@@ -246,13 +251,15 @@ module mycore (
   // --------------------------------------------- //
 
   wire [31:0] rs1, rs2;
-  assign rs1 = is_jalr_is_ex ? PC_is_ex : r1_out;
+  assign rs1 = is_jalr_rn_dp ? PC_rn_dp : r1_out;
   assign rs2 = sel_imm ? imm_is_ex : r2_out;
 
   wire [31:0] aluC;
   wire [31:0] addC;
   wire [31:0] shfC;
   wire [31:0] lsuC;
+  wire [31:0] mpyC;
+  wire [31:0] divC;
   wire [31:0] out;
 
   alu alu_1(
@@ -281,6 +288,14 @@ module mycore (
     .shfC(shfC)
   );
 
+  multiplier multiplier_1(
+    .is_used(use_multiplier),
+    .opcode(multiplier_op),
+    .mpyA(rs1),
+    .mpyB(rs2),
+    .mpyC(mpyC)
+  );
+
   wire [31:0] dm_out_ex;
   wire [31:0] dm_addr_ex;
   wire [3:0] dm_ld_ex;
@@ -297,14 +312,22 @@ module mycore (
     .is_st(dm_st_ex)
   );
 
+  divider divider_1(
+    .is_used(use_divider),
+    .opcode(divider_op),
+    .divA(rs1),
+    .divB(rs2),
+    .divC(divC)
+  );
+
   // ----------------------------------------------- //
   // ----------------- EX to MEM ------------------- //
   // ----------------------------------------------- //
 
   reg [31:0] pipe_ex_mem;
   reg [31:0] dm_addr_ex_mem;
-  reg [3:0] dm_ld_ex_mem;
-  reg [3:0] dm_st_ex_mem;
+  reg  [3:0] dm_ld_ex_mem;
+  reg  [3:0] dm_st_ex_mem;
 
   always @(posedge clk) begin
     
@@ -319,6 +342,9 @@ module mycore (
     end
     else if(use_lsu) begin
       pipe_ex_mem <= lsuC;
+    end
+    else if(use_divider) begin
+      pipe_ex_mem <= divC;
     end
     else begin
       pipe_ex_mem <= 32'b0;
@@ -354,8 +380,9 @@ module mycore (
   // ------- Pipe8 WB: Write back and commit ------- //
   // ----------------------------------------------- //
 
-  wire [31:0] rd_in_wb = dm_ld_ex_mem ? dm_rd_in : pipe_mem_wb;
-  wire  [4:0] rd_addr_wb = rd_addr_mem_wb;
+  assign w1_addr_wb = rd_addr_mem_wb;
+  assign w1_value = ld_valid ? dm_rd_in : pipe_mem_wb;
+  assign w1_en_wb = 
 
 
 
