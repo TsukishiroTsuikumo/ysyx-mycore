@@ -14,18 +14,28 @@ VERILATOR_FLAGS = \
 	+define+UVM_NO_DPI \
 	-F filst.f
 
-all: build
+run: build
 	./$(OBJ_DIR)/V$(TB_TOP)
 
 build:
+	rm -f flist.f
+	find . -name "*.v" > flist.f
+	find . -name "*.sv" >> flist.f
 	$(VERILATOR) $(VERILATOR_FLAGS) \
 	$(UVM_HOME)/src/uvm_pkg.sv
 
-check:
-	$(VERILATOR) --lint-only -Wall -f flist.f
+checkv:
+	rm -f flistv.f
+	find . -name "*.v" > flistv.f
+	$(VERILATOR) --lint-only -Wall -f flistv.f
+
+checksv:
+	rm -f flistsv.f
+	find . -name "*.sv" > flistsv.f
+	$(VERILATOR) -sv --lint-only -Wall -f flistsv.f
 
 clean:
 	rm -rf $(OBJ_DIR) *.vcd *.fst
 
-.PHONY: all build run clean
+.PHONY: build run clean
 

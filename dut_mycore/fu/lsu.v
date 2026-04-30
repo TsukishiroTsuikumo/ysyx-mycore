@@ -1,10 +1,10 @@
 module lsu (
     input               is_used,
     input        [2:0]  opcode,
-    input       [31:0]  lsuA,
-    input       [31:0]  lsuB,
-    input       [31:0]  addr_imm,
-    output      [31:0]  dm_addr,
+    input       [31:0]  lsuA, // PC
+    input       [31:0]  lsuB, // offset
+    input       [31:0]  st_value,
+    output  reg [31:0]  dm_addr,
     output  reg [31:0]  dm_out,
 
     output  reg  [3:0]  is_ld,
@@ -14,19 +14,19 @@ module lsu (
     localparam lb  = 3'b000;
     localparam lh  = 3'b001;
     localparam lw  = 3'b010;
-    localparam lbu = 3'b100;
-    localparam lhu = 3'b101;
-    localparam sb  = 3'b110;
-    localparam sh  = 3'b111;
-    localparam sw  = 3'b110;
+    localparam lbu = 3'b011;
+    localparam lhu = 3'b100;
+    localparam sb  = 3'b101;
+    localparam sh  = 3'b110;
+    localparam sw  = 3'b111;
 
     always @(*) begin
         if(is_used) begin
             
-            dm_out = lsuA;
-            dm_addr = lsuB + addr_imm;
-            ls_ld = 4'b0;
-            ls_st = 4'b0;
+            dm_out = st_value;
+            dm_addr = lsuA + lsuB;
+            is_ld = 4'b0;
+            is_st = 4'b0;
 
             case(opcode)
                 lb: begin

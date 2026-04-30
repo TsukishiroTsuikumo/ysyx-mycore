@@ -1,8 +1,4 @@
 module reg_R
-#(parameter reg_log = 1'b0,
-  parameter reg_log_name = "X"
-)
-
 ( input			      clk,
   input			      reset,
   // Read Port 1
@@ -19,8 +15,8 @@ module reg_R
 
   reg [31:0] reg_val[0:31];
 
-  assign r1_out = r1_addr ? reg_val[r1_addr] : 32'b0;
-  assign r2_out = r2_addr ? reg_val[r2_addr] : 32'b0;
+  assign r1_out = (r1_addr == 5'd0) ? 32'b0 : reg_val[r1_addr];
+  assign r2_out = (r2_addr == 5'd0) ? 32'b0 : reg_val[r2_addr];
 
   always @( posedge clk or posedge reset) begin // Write
     if (reset) begin
@@ -30,7 +26,7 @@ module reg_R
       end
     end
     else if(w1_en) begin
-      if (!w1_addr) begin
+      if (w1_addr != 5'd0) begin
       reg_val[w1_addr] <= w1_in;
       end
     end

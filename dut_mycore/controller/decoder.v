@@ -2,9 +2,7 @@ module decoder
 (   input [31:0] instr,
 
     // Oprand
-    output              sel_rs1,
     output       [4:0]  rs1_addr,
-    output  reg         sel_rs2,
     output       [4:0]  rs2_addr,
     output  reg         sel_imm,
     output  reg [31:0]  imm,
@@ -14,15 +12,15 @@ module decoder
     // Opcode Signal
     output  reg  [2:0]  adder_op,
     output  reg  [1:0]  shifter_op,
-    output  reg  [1:0]  multiplier_op,
-    output  reg  [1:0]  divider_op,
+    output  reg  [3:0]  multiplier_op,
+    output  reg  [3:0]  divider_op,
     output  reg  [1:0]  alu_op,
+    output  reg  [2:0]  lsu_op,
 
     // Control Signal
-    output       [4:0]  use_signal,
+    output       [5:0]  use_signal,
     output  reg         is_jal,
-    output  reg         is_jalr,
-    output  reg         is_cd_jp
+    output  reg         is_jalr
 );
 
     wire [6:0] func7;
@@ -36,66 +34,67 @@ module decoder
     assign rs2_addr = instr[24:20];
     assign rd_addr  = instr[11:7];
 
+    reg use_adder, use_shifter, use_multiplier, use_divider, use_alu, use_lsu;
+
     always @(*) begin
 
-        sel_rs1 = 1'b0;
-        sel_rs2 = 1'b0;
         sel_rd  = 1'b0;
         sel_imm = 1'b0;
         imm     = 32'b0;
+        
         adder_op = 3'b000;
-        shifter_op = 1'b0;
-        multiplier_op = 1'b0;
-        divider_op = 1'b0;
+        shifter_op = 2'b00;
+        alu_op = 2'b00;
+        multiplier_op = 4'b0000;
+        divider_op = 4'b0000;
+        lsu_op = 3'b000;
+
         use_adder = 1'b0;
         use_shifter = 1'b0;
         use_multiplier = 1'b0;
         use_divider = 1'b0;
-        use_addr = 1'b0;
         use_alu = 1'b0;
+        use_lsu = 1'b0;
         is_jal = 1'b0;
         is_jalr = 1'b0;
-        is_cd_jp = 1'b0;
 
         case(opcode)
 
         // ----- R-Type ----- //
             7'b0110011: begin
-                sel_rs1 = 1'b1;
-                sel_rs2 = 1'b1;
                 sel_rd  = 1'b1;
                 if(func7 == 7'b0000001) begin
                     case(func3)
                         3'b000: begin
-                            multiplier_op = 1; // mul
+                            multiplier_op = 4'b0001; // mul
                             use_multiplier = 1'b1;
                         end
                         3'b001: begin
-                            multiplier_op = 2; // mulh
+                            multiplier_op = 4'b0010; // mulh
                             use_multiplier = 1'b1;
                         end
                         3'b010: begin
-                            multiplier_op = 3; // mulhu
+                            multiplier_op = 4'b0100; // mulhu
                             use_multiplier = 1'b1;
                         end
                         3'b011: begin
-                            multiplier_op = 4; // mulhsu
+                            multiplier_op = 4'b1000; // mulhsu
                             use_multiplier = 1'b1;
                         end
                         3'b100: begin
-                            divider_op = 1; // div
+                            divider_op = 4'b0001; // div
                             use_divider = 1'b1;
                         end
                         3'b101: begin
-                            divider_op = 2; // divu
+                            divider_op = 4'b0010; // divu
                             use_divider = 1'b1;
                         end
                         3'b110: begin
-                            divider_op = 3; // rem
+                            divider_op = 4'b0100; // rem
                             use_divider = 1'b1;
                         end
                         3'b111: begin
-                            divider_op = 4; // remu
+                            divider_op = 4'b1000; // remu
                             use_divider = 1'b1;
                         end
                     endcase
@@ -103,7 +102,7 @@ module decoder
                 else begin
                     case(func3)
                         3'b000: begin
-                            use_addr = 1'b1;
+                            use_adder = 1'b1;
                             if(func7 == 7'b0000000) begin
                                 adder_op = 3'b000; // add
                             end
@@ -142,14 +141,13 @@ module decoder
 
         // ----- I-Type ----- //
             7'b0010011: begin
-                sel_rs1 = 1'b1;
                 sel_imm = 1'b1;
                 sel_rd  = 1'b1;
                 imm = {{20{instr[31]}}, instr[31:20]};
                 case(func3)
                     3'b000: begin
                         adder_op = 3'b000; // addi
-                        use_addr = 1'b1;
+                        use_adder = 1'b1;
                     end
                     3'b111: begin
                         alu_op = 1; // andi
@@ -180,46 +178,43 @@ module decoder
                 endcase
             end
             7'b0000011: begin
-                sel_rs1 = 1'b1;
+                use_lsu = 1'b1;
                 sel_imm = 1'b1;
                 sel_rd  = 1'b1;
                 imm = {{20{instr[31]}}, instr[31:20]};
                 case (func3)
-                    3'b000: lb;
-                    3'b001: lh;
-                    3'b010: lw;
-                    3'b100: lbu;
-                    3'b101: lhu;
+                    3'b000: lsu_op = 3'b000; // lb
+                    3'b001: lsu_op = 3'b001; // lh
+                    3'b010: lsu_op = 3'b010; // lw
+                    3'b100: lsu_op = 3'b011; // lbu
+                    3'b101: lsu_op = 3'b100; // lhu
                 endcase
             end
             7'b1100111: begin // jalr
-                sel_rs1 = 1'b1;
                 sel_imm = 1'b1;
                 sel_rd  = 1'b1;
                 is_jalr = 1'b1;
+                use_adder = 1'b1;
+                adder_op = 3'b000; // add
                 imm = {{20{instr[31]}}, instr[31:20]};
             end
 
         // ----- S-Type ----- //
             7'b0100011: begin
-                sel_rs1 = 1'b1;
-                sel_rs2 = 1'b1;
+                use_lsu = 1'b1;
                 sel_imm = 1'b1;
                 imm = {{20{instr[31]}}, instr[31:25], instr[11:7]};
                 case(func3)
-                    3'b000: sel_mem = 2'b00; // sb
-                    3'b001: sel_mem = 2'b01; // sh
-                    3'b010: sel_mem = 2'b10; // sw
+                    3'b000: lsu_op = 3'b101; // sb
+                    3'b001: lsu_op = 3'b110; // sh
+                    3'b010: lsu_op = 3'b111; // sw
                 endcase
             end
 
         // ----- B-Type ----- //
             7'b1100011: begin
-                sel_rs1 = 1'b1;
-                sel_rs2 = 1'b1;
-                is_cd_jp = 1'b1;
                 imm = {{20{instr[31]}}, instr[7], instr[30:25], instr[11:8], 1'b0};
-                use_addr = 1'b1;
+                use_adder = 1'b1;
                 case(func3)
                     3'b000: adder_op = 3'b011; // beq
                     3'b001: adder_op = 3'b100; // bne
@@ -240,19 +235,19 @@ module decoder
         // ----- U-type ----- //
             7'b0110111: begin  // lui
                 sel_rd = 1'b1;
-                use_addr = 1'b1;
+                use_lsu = 1'b1;
                 imm = {instr[31:12], 12'b0};
             end
 
             7'b0010111: begin  // auipc
                 sel_rd = 1'b1;
-                use_addr = 1'b1;
+                use_adder = 1'b1;
                 imm = {instr[31:12], 12'b0};
             end
 
         endcase
     end
 
-    assign use_signal = {use_divider, use_multiplier, use_shifter, use_alu, use_adder};
+    assign use_signal = {use_lsu, use_divider, use_multiplier, use_shifter, use_alu, use_adder};
 
 endmodule

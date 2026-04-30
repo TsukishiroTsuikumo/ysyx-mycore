@@ -13,10 +13,10 @@ module adder (
     localparam ltu = 3'b101;
     localparam geu = 3'b110;
 
-    wire [31:0] a_in;
-    wire [31:0] b_in;
+    wire [32:0] a_in;
+    wire [32:0] b_in;
     wire sel_sub;
-    wire [31:0] b_in_mux;
+    wire [32:0] b_in_mux;
     
     assign a_in = is_used ? {1'b0, addA} : 33'b0;
     assign b_in = is_used ? {1'b0, addB} : 33'b0;
@@ -26,8 +26,8 @@ module adder (
 
     genvar i;
     generate
-        for(i=0;i<33;i++) begin :adder
-            if(i==0) begin
+        for(i=0;i<33;i++) begin : gen_adder
+            if(i==0) begin : gen_first_bit
                 fulladder fa (
                     .ain(a_in[i]),
                     .bin(b_in_mux[i]),
@@ -36,7 +36,7 @@ module adder (
                     .cout(sum[i+1])
                 );
             end
-            else begin
+            else begin : gen_other_bits
                 fulladder fa (
                     .ain(a_in[i]),
                     .bin(b_in_mux[i]),
