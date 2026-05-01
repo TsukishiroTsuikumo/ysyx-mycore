@@ -1,4 +1,4 @@
-class mycore_driver extend uvm_driver #(mycore_item);
+class mycore_driver extends uvm_driver #(mycore_item);
     `uvm_component_utils(mycore_driver)
 
     virtual mycore_if vif;
@@ -9,6 +9,8 @@ class mycore_driver extend uvm_driver #(mycore_item);
 
     virtual function void build_phase(uvm_phase phase);
         super.build_phase(phase);
+        if (!uvm_config_db#(virtual mycore_if)::get(this, "", "vif", vif))
+            `uvm_fatal("NOVIF", "driver cannot get vif")
     endfunction
 
     task run_phase(uvm_phase phase);

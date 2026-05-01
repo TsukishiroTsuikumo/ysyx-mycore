@@ -1,3 +1,5 @@
+`timescale 1ns/1ps
+
 module reg_PC
 ( input			  clk,
   input			  reset,

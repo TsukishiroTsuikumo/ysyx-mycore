@@ -6,23 +6,21 @@ VERILATOR_FLAGS = \
 	-sv \
 	--timing \
 	--binary \
+	--trace \
 	--build -j 0 \
 	-Wall -Wno-fatal \
 	--top-module $(TB_TOP) \
 	-I$(UVM_HOME)/src \
 	+incdir+$(UVM_HOME)/src \
-	+define+UVM_NO_DPI \
-	-F filst.f
+	$(UVM_HOME)/src/uvm_pkg.sv \
+	-F flist.f \
+	+define+UVM_NO_DPI
 
 run: build
 	./$(OBJ_DIR)/V$(TB_TOP)
 
 build:
-	rm -f flist.f
-	find . -name "*.v" > flist.f
-	find . -name "*.sv" >> flist.f
-	$(VERILATOR) $(VERILATOR_FLAGS) \
-	$(UVM_HOME)/src/uvm_pkg.sv
+	$(VERILATOR) $(VERILATOR_FLAGS)
 
 checkv:
 	rm -f flistv.f

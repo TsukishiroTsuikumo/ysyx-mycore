@@ -7,18 +7,18 @@ package mycore_pkg;
   import uvm_pkg::*;
   `include "uvm_macros.svh"
 
-  `include "seq/sequence_item.sv"
-  `include "seq/sequence.sv"
+  `include "test_bench/seq/mycore_item.svh"
+  `include "test_bench/seq/mycore_sequence.svh"
 
-  `include "agent/sequencer.sv"
-  `include "agent/driver.sv"
-  `include "agent/monitor.sv"
+  `include "test_bench/agent/mycore_sequencer.svh"
+  `include "test_bench/agent/mycore_driver.svh"
+  `include "test_bench/agent/mycore_monitor.svh"
 
-  `include "env/agent.sv"
-  //`include "env/scoreboard.sv"
-  `include "env/env.sv"
+  `include "test_bench/env/mycore_agent.svh"
+  //`include "test_bench/env/mycore_scoreboard.svh"
+  `include "test_bench/env/mycore_env.svh"
 
-  `include "test/mycore_test.sv"
+  `include "test_bench/test/mycore_test.svh"
 
 endpackage
 

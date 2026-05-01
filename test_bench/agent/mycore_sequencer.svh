@@ -1,4 +1,4 @@
-class mycore_sequencer extend uvm_sequencer #(mycore_item);
+class mycore_sequencer extends uvm_sequencer #(mycore_item);
     `uvm_component_utils(mycore_sequencer)
   
     function new(string name, uvm_component parent);

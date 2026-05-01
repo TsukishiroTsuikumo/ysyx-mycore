@@ -1,3 +1,5 @@
+`timescale 1ns/1ps
+
 module test_bench;
 
   import uvm_pkg::*;
@@ -22,8 +24,8 @@ module test_bench;
     .dm_rd_in(mycore_if_inst.dm_rd_in),
     .dm_wr_out(mycore_if_inst.dm_wr_out),
     .dm_addr_out(mycore_if_inst.dm_addr_out),
-    .dm_st_out(mycore_if_inst.dm_st_out),
-    .dm_ld_out(mycore_if_inst.dm_ld_out),
+    .dm_st(mycore_if_inst.dm_st_out),
+    .dm_ld(mycore_if_inst.dm_ld_out),
     .ld_valid(mycore_if_inst.ld_valid)
   );
 
@@ -40,8 +42,8 @@ module test_bench;
   end
 
   initial begin
-    $fsdbDumpfile("test.wave");
-    $fsdbDumpvars(0, test_bench);
+    $dumpfile("test.vcd");
+    $dumpvars(0, test_bench);
   end
 
   initial begin

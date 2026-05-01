@@ -1,0 +1,16 @@
+/*
+
+*.log
+
+!*/
+!*.v
+!*.sv
+!*.svh
+!Makefile
+!*.c
+!*.h
+!*.cpp
+!flist.f
+!.gitignore
+
+/obj_dir/

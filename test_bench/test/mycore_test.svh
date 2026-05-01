@@ -1,4 +1,4 @@
-class mycore_test extend uvm_test;
+class mycore_test extends uvm_test;
     `uvm_component_utils(mycore_test)
 
     virtual mycore_if vif;

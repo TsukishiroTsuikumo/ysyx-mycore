@@ -24,29 +24,7 @@ module adder (
     assign b_in_mux = sel_sub ? ~b_in : b_in;
     wire [33:0] sum;
 
-    genvar i;
-    generate
-        for(i=0;i<33;i++) begin : gen_adder
-            if(i==0) begin : gen_first_bit
-                fulladder fa (
-                    .ain(a_in[i]),
-                    .bin(b_in_mux[i]),
-                    .cin(sel_sub),
-                    .sum(sum[i]),
-                    .cout(sum[i+1])
-                );
-            end
-            else begin : gen_other_bits
-                fulladder fa (
-                    .ain(a_in[i]),
-                    .bin(b_in_mux[i]),
-                    .cin(sum[i]),
-                    .sum(sum[i]),
-                    .cout(sum[i+1])
-                );
-            end
-        end
-    endgenerate
+    assign sum = a_in + b_in_mux + sel_sub; // if sel_sub is 1, add 1 for two's complement
 
     wire ZF, SF, OF, CF;
     assign ZF = (sum[31:0] == 32'b0);
@@ -67,18 +45,5 @@ module adder (
     end
 
     assign addC = sum[31:0];
-
-endmodule
-
-
-module fulladder (
-    input ain,
-    input bin,
-    input cin,
-    output sum,
-    output cout
-);
-    assign sum = ain ^ bin ^ cin;
-    assign cout = (ain & bin) | (ain & cin) | (bin & cin);
 
 endmodule
