@@ -6,6 +6,7 @@
 
 test_bench/test_bench.sv
 test_bench/mycore_if.sv
+test_bench/state_probe_if.sv
 test_bench/mycore_pkg.sv
 
 ./dut_mycore/mycore.v
@@ -19,3 +20,4 @@ test_bench/mycore_pkg.sv
 ./dut_mycore/fu/lsu.v
 ./dut_mycore/fu/adder.v
 ./dut_mycore/fu/divider.v
+./dut_mycore/fu/imu.v

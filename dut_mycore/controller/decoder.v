@@ -16,9 +16,10 @@ module decoder
     output  reg  [3:0]  divider_op,
     output  reg  [1:0]  alu_op,
     output  reg  [2:0]  lsu_op,
+    output  reg  [1:0]  imu_op,
 
     // Control Signal
-    output       [5:0]  use_signal,
+    output       [6:0]  use_signal,
     output  reg         is_jal,
     output  reg         is_jalr
 );
@@ -34,7 +35,7 @@ module decoder
     assign rs2_addr = instr[24:20];
     assign rd_addr  = instr[11:7];
 
-    reg use_adder, use_shifter, use_multiplier, use_divider, use_alu, use_lsu;
+    reg use_adder, use_shifter, use_multiplier, use_divider, use_alu, use_lsu, use_imu;
 
     always @(*) begin
 
@@ -48,6 +49,7 @@ module decoder
         multiplier_op = 4'b0000;
         divider_op = 4'b0000;
         lsu_op = 3'b000;
+        imu_op = 2'b00;
 
         use_adder = 1'b0;
         use_shifter = 1'b0;
@@ -55,6 +57,7 @@ module decoder
         use_divider = 1'b0;
         use_alu = 1'b0;
         use_lsu = 1'b0;
+        use_imu = 1'b0;
         is_jal = 1'b0;
         is_jalr = 1'b0;
 
@@ -111,28 +114,28 @@ module decoder
                             end
                         end
                         3'b111: begin
-                            alu_op = 1; // and
+                            alu_op = 2'b10; // and
                             use_alu = 1'b1;
                         end
                         3'b110: begin
-                            alu_op = 2; // or
+                            alu_op = 2'b01; // or
                             use_alu = 1'b1;
                         end
                         3'b100: begin
-                            alu_op = 3; // xor
+                            alu_op = 2'b11; // xor
                             use_alu = 1'b1;
                         end
                         3'b001: begin
-                            shifter_op = 1; // sll
+                            shifter_op = 2'b01; // sll
                             use_shifter = 1'b1;
                         end
                         3'b101: begin
                             use_shifter = 1'b1;
                             if(func7 == 7'b0000000) begin
-                                shifter_op = 2; // srl
+                                shifter_op = 2'b10; // srl
                             end
                             else if(func7 == 7'b0100000) begin
-                                shifter_op = 3; // sra
+                                shifter_op = 2'b11; // sra
                             end
                         end
                     endcase
@@ -150,28 +153,28 @@ module decoder
                         use_adder = 1'b1;
                     end
                     3'b111: begin
-                        alu_op = 1; // andi
+                        alu_op = 2'b10; // andi
                         use_alu = 1'b1;
                     end
                     3'b110: begin
-                        alu_op = 2; // ori
+                        alu_op = 2'b01; // ori
                         use_alu = 1'b1;
                     end
                     3'b100: begin
-                        alu_op = 3; // xori
+                        alu_op = 2'b11; // xori
                         use_alu = 1'b1;
                     end
                     3'b001: begin
-                        shifter_op = 1; // slli
+                        shifter_op = 2'b01; // slli
                         use_shifter = 1'b1;
                     end
                     3'b101: begin
                         if(func7 == 7'b0000000) begin
-                            shifter_op = 2; // srli
+                            shifter_op = 2'b10; // srli
                             use_shifter = 1'b1;
                         end
                         else if(func7 == 7'b0100000) begin
-                            shifter_op = 3; // srai
+                            shifter_op = 2'b11; // srai
                             use_shifter = 1'b1;
                         end
                     end
@@ -235,19 +238,21 @@ module decoder
         // ----- U-type ----- //
             7'b0110111: begin  // lui
                 sel_rd = 1'b1;
-                use_lsu = 1'b1;
+                use_imu = 1'b1;
+                imu_op = 2'b01;
                 imm = {instr[31:12], 12'b0};
             end
 
             7'b0010111: begin  // auipc
                 sel_rd = 1'b1;
-                use_adder = 1'b1;
+                use_imu = 1'b1;
+                imu_op = 2'b10;
                 imm = {instr[31:12], 12'b0};
             end
 
         endcase
     end
 
-    assign use_signal = {use_lsu, use_divider, use_multiplier, use_shifter, use_alu, use_adder};
+    assign use_signal = {use_imu, use_lsu, use_divider, use_multiplier, use_shifter, use_alu, use_adder};
 
 endmodule

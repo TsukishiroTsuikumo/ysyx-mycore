@@ -1,0 +1,10 @@
+interface state_probe_if(
+    input bit clk,
+    input bit reset
+);
+    logic [31:0] pm_rd_in;
+    logic [31:0] pc_val;
+    logic [31:0] reg_val[0:31];
+    logic        w1_en;
+    
+endinterface

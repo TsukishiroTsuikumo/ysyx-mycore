@@ -36,8 +36,8 @@ module controller(
     assign btb_target = 32'b0;
     // next pc
     reg [31:0] npc;
-    assign flush_sig = 4'b0000;
     always @(*) begin
+        flush_sig = 4'b0000;
         if(is_cd_jp) begin
             npc = npc_cd;
             flush_sig = 4'b0011;

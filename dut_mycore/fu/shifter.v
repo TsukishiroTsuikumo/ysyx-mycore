@@ -6,9 +6,9 @@ module shifter (
     output  [31:0]  shfC
 );
 
-    localparam sll = 2'b00;
-    localparam srl = 2'b01;
-    localparam sra = 2'b10;
+    localparam sll = 2'b01;
+    localparam srl = 2'b10;
+    localparam sra = 2'b11;
 
     wire [31:0] a_in = is_used ? shfA : 32'b0;
     wire [31:0] b_in = is_used ? shfB : 32'b0;

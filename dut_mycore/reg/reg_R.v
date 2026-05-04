@@ -24,12 +24,12 @@ module reg_R
     if (reset) begin
       integer i;
       for(i=1;i<32;i++) begin
-      reg_val[i] <= 32'b0;
+        reg_val[i] <= 32'b0;
       end
     end
     else if(w1_en) begin
       if (w1_addr != 5'd0) begin
-      reg_val[w1_addr] <= w1_in;
+        reg_val[w1_addr] <= w1_in;
       end
     end
   end

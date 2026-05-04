@@ -21,6 +21,8 @@ class mycore_driver extends uvm_driver #(mycore_item);
             vif.pm_rd_in <= item.pm_rd_in;
             vif.dm_rd_in <= item.dm_rd_in;
             vif.ld_valid <= item.ld_valid;
+            `uvm_info("DRIVER", $sformatf("Driving item: pm_rd_in=0x%08x, dm_rd_in=0x%08x, ld_valid=%b",
+                                      vif.pm_rd_in, vif.dm_rd_in, vif.ld_valid), UVM_LOW)
             seq_item_port.item_done();
         end
     endtask

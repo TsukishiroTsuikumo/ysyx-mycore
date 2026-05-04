@@ -44,9 +44,9 @@ module mycore (
   reg_PC PC(
     .clk(clk),
     .reset(reset),
-    .pc_en(ifetch), // from controller
-    .pcw(next_pc), // from controller
-    .pcr(current_pc_if) // to controller
+    .pc_en(ifetch),
+    .pcw(next_pc),
+    .pcr(current_pc_if)
   );
 
   reg [31:0] PC_if_id;
@@ -76,8 +76,9 @@ module mycore (
   wire  [3:0]  divider_op_id;
   wire  [1:0]  alu_op_id;
   wire  [2:0]  lsu_op_id;
+  wire  [1:0]  imu_op_id;
 
-  wire  [5:0]  use_signal_id;
+  wire  [6:0]  use_signal_id;
   wire         is_jal_id;
   wire         is_jalr_id;
 
@@ -97,6 +98,7 @@ module mycore (
     .multiplier_op(multiplier_op_id),
     .divider_op(divider_op_id),
     .lsu_op(lsu_op_id),
+    .imu_op(imu_op_id),
 
     .use_signal(use_signal_id),
     .is_jal(is_jal_id),
@@ -112,7 +114,7 @@ module mycore (
   reg  [31:0] imm_id_ex;
   reg         w1_en_id_ex;
   reg         sel_imm_id_ex;
-  reg   [5:0] use_signal_id_ex;
+  reg   [6:0] use_signal_id_ex;
 
   reg   [2:0] adder_op_id_ex;
   reg   [1:0] shifter_op_id_ex;
@@ -120,6 +122,7 @@ module mycore (
   reg   [3:0] divider_op_id_ex;
   reg   [1:0] alu_op_id_ex;
   reg   [2:0] lsu_op_id_ex;
+  reg   [1:0] imu_op_id_ex;
 
   reg         is_jal_id_ex;
   reg         is_jalr_id_ex;
@@ -131,13 +134,14 @@ module mycore (
       imm_id_ex <= 32'b0;
       w1_en_id_ex <= 1'b0;
       sel_imm_id_ex <= 1'b0;
-      use_signal_id_ex <= 6'b0;
+      use_signal_id_ex <= 7'b0;
       adder_op_id_ex <= 3'b000;
       shifter_op_id_ex <= 2'b00;
       alu_op_id_ex <= 2'b00;
       multiplier_op_id_ex <= 4'b0000;
       divider_op_id_ex <= 4'b0000;
       lsu_op_id_ex <= 3'b000;
+      imu_op_id_ex <= 2'b00;
       is_jal_id_ex <= 1'b0;
       is_jalr_id_ex <= 1'b0;
     end
@@ -153,6 +157,7 @@ module mycore (
       multiplier_op_id_ex <= multiplier_op_id;
       divider_op_id_ex    <= divider_op_id;
       lsu_op_id_ex        <= lsu_op_id;
+      imu_op_id_ex        <= imu_op_id;
       is_jal_id_ex        <= is_jal_id;
       is_jalr_id_ex       <= is_jalr_id;
       PC_id_ex            <= PC_if_id;
@@ -188,6 +193,7 @@ module mycore (
   wire [31:0] lsuC;
   wire [31:0] mpyC;
   wire [31:0] divC;
+  wire [31:0] imuC;
 
   alu alu_1(
     .is_used(use_signal_id_ex[1]),
@@ -246,6 +252,14 @@ module mycore (
     .divC(divC)
   );
 
+  imu imu_1(
+    .is_used(use_signal_id_ex[6]),
+    .opcode(imu_op_id_ex),
+    .current_pc(PC_id_ex),
+    .imm(imm_id_ex),
+    .out(imuC)
+  );
+
   wire [31:0] ret_addr = PC_id_ex + 4;
   wire jal_sig = is_jal_id_ex | is_jalr_id_ex;
 
@@ -274,12 +288,13 @@ module mycore (
         1'b1: pipe_ex_mem <= ret_addr;
         default: begin
           case (use_signal_id_ex)
-            6'b000001: pipe_ex_mem <= addC;
-            6'b000010: pipe_ex_mem <= aluC;
-            6'b000100: pipe_ex_mem <= shfC;
-            6'b001000: pipe_ex_mem <= mpyC;
-            6'b010000: pipe_ex_mem <= divC;
-            6'b100000: pipe_ex_mem <= lsuC;
+            7'b0000001: pipe_ex_mem <= addC;
+            7'b0000010: pipe_ex_mem <= aluC;
+            7'b0000100: pipe_ex_mem <= shfC;
+            7'b0001000: pipe_ex_mem <= mpyC;
+            7'b0010000: pipe_ex_mem <= divC;
+            7'b0100000: pipe_ex_mem <= lsuC;
+            7'b1000000: pipe_ex_mem <= imuC;
             default:   pipe_ex_mem <= 32'b0;
           endcase
         end
@@ -308,17 +323,20 @@ module mycore (
   reg [31:0]  pipe_mem_wb;
   reg  [4:0]  w1_addr_mem_wb;
   reg         w1_en_mem_wb;
+  reg         is_ld_mem_wb;
 
   always @(posedge clk) begin
     if(flush_sig[3]) begin // flush
       pipe_mem_wb <= 32'b0;
       w1_addr_mem_wb <= 5'b0;
       w1_en_mem_wb <= 1'b0;
+      is_ld_mem_wb <= 1'b0;
     end
     else begin
       pipe_mem_wb <= pipe_ex_mem;
       w1_addr_mem_wb <= w1_addr_ex_mem;
       w1_en_mem_wb <= w1_en_ex_mem;
+      is_ld_mem_wb <= (dm_ld_ex_mem != 4'b0) ? 1'b1 : 1'b0;
     end
   end
 
@@ -326,10 +344,8 @@ module mycore (
   // ------- Pipe5 WB: Write back and commit ------- //
   // ----------------------------------------------- //
 
-  
   wire  [4:0] w1_addr_wb = w1_addr_mem_wb;
-  wire [31:0] w1_in_wb = ld_valid ? dm_rd_in : pipe_mem_wb;
-  wire        w1_en_wb = w1_en_mem_wb;
-
+  wire [31:0] w1_in_wb = is_ld_mem_wb ? dm_rd_in : pipe_mem_wb;
+  wire        w1_en_wb = w1_en_mem_wb && (!is_ld_mem_wb || ld_valid);
 
 endmodule

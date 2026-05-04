@@ -9,12 +9,11 @@ module test_bench;
   bit reset;
   initial begin
     clk = 0;
-    forever #5 clk = ~clk;
-    reset = 1;
+    reset = 0;
+    forever #1 clk = ~clk;
   end
   
   mycore_if mycore_if_inst(clk, reset);
-
   mycore dut(
     .clk(clk),
     .reset(reset),
@@ -28,6 +27,17 @@ module test_bench;
     .dm_ld(mycore_if_inst.dm_ld_out),
     .ld_valid(mycore_if_inst.ld_valid)
   );
+
+  state_probe_if state_probe_if_inst(clk, reset);
+  genvar i;
+  generate
+    for (i = 0; i < 32; i++) begin: gen_regfile_probe
+      assign state_probe_if_inst.reg_val[i] = dut.regfile.reg_val[i];
+    end
+    assign state_probe_if_inst.pm_rd_in = dut.pm_rd_in;
+    assign state_probe_if_inst.pc_val = dut.current_pc_if;
+    assign state_probe_if_inst.w1_en = dut.regfile.w1_en;
+  endgenerate
 
   initial begin
     mycore_if_inst.pm_rd_in = 0;
@@ -46,9 +56,15 @@ module test_bench;
     $dumpvars(0, test_bench);
   end
 
+  string testname;
+
   initial begin
     uvm_config_db#(virtual mycore_if)::set(null, "*", "vif", mycore_if_inst);
-    run_test("mycore_test");
+    uvm_config_db#(virtual state_probe_if)::set(null, "*", "vif", state_probe_if_inst);
+    if (!$value$plusargs("UVM_TESTNAME=%s", testname)) begin
+      testname = "mycore_test";
+    end
+    run_test(testname);
   end
 
 endmodule

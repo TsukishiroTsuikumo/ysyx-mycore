@@ -1,6 +1,10 @@
-TB_TOP    := test_bench
-OBJ_DIR   := obj_dir
-VERILATOR := verilator
+TB_TOP    			:= test_bench
+OBJ_DIR   			:= obj_dir
+VERILATOR 			:= verilator
+TEST 				?= mycore_test
+RUN_ARGS 			?= +UVM_TESTNAME=$(TEST)
+VERILATOR_SOLVER 	= z3 --in
+export VERILATOR_SOLVER
 
 VERILATOR_FLAGS = \
 	-sv \
@@ -17,7 +21,7 @@ VERILATOR_FLAGS = \
 	+define+UVM_NO_DPI
 
 run: build
-	./$(OBJ_DIR)/V$(TB_TOP)
+	VERILATOR_SOLVER="$(VERILATOR_SOLVER)" ./$(OBJ_DIR)/V$(TB_TOP) $(RUN_ARGS)
 
 build:
 	$(VERILATOR) $(VERILATOR_FLAGS)
