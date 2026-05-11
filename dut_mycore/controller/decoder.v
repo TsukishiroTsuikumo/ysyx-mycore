@@ -37,7 +37,7 @@ module decoder
 
     reg use_adder, use_shifter, use_multiplier, use_divider, use_alu, use_lsu, use_imu;
 
-    always @(*) begin
+    always @(instr) begin
 
         sel_rd  = 1'b0;
         sel_imm = 1'b0;
@@ -251,6 +251,13 @@ module decoder
             end
 
         endcase
+
+        // if (instr != 32'b0) begin
+        //     $display("[DECDBG] t=%0t instr=0x%08x opcode=%07b func7=%07b func3=%03b sel_rd=%0b use=%07b",
+        //              $time, instr, opcode, func7, func3, sel_rd,
+        //              {use_imu, use_lsu, use_divider, use_multiplier, use_shifter, use_alu, use_adder});
+        // end
+
     end
 
     assign use_signal = {use_imu, use_lsu, use_divider, use_multiplier, use_shifter, use_alu, use_adder};

@@ -110,6 +110,9 @@ class r_type_scoreboard extends uvm_scoreboard;
 
         exp.rd = rd;
         exp.value = calc_r_type(funct7, funct3, exp_regs[rs1], exp_regs[rs2]);
+        if (rd == 5'd0) begin
+            exp.value = 32'b0;
+        end
         exp_q.push_back(exp);
     endfunction
 
@@ -132,20 +135,18 @@ class r_type_scoreboard extends uvm_scoreboard;
                 end
                 else begin
                     exp = exp_q.pop_front();
-                    if (exp.rd != 5'd0) begin
-                        if (probe_vif.reg_val[exp.rd] !== exp.value) begin
-                            fail_count++;
-                            if (uvm_report_enabled(UVM_NONE, UVM_ERROR, "SCORE") != 0) begin
-                                uvm_report_error("SCORE", $sformatf(
-                                    "rd x%0d exp=0x%08x act=0x%08x",
-                                    exp.rd, exp.value, probe_vif.reg_val[exp.rd]
-                                ), UVM_NONE);
-                            end
-                        end else begin
-                            pass_count++;
+                    if (probe_vif.reg_val[exp.rd] !== exp.value) begin
+                        fail_count++;
+                        if (uvm_report_enabled(UVM_NONE, UVM_ERROR, "SCORE") != 0) begin
+                            uvm_report_error("SCORE", $sformatf(
+                                "rd x%0d exp=0x%08x act=0x%08x",
+                                exp.rd, exp.value, probe_vif.reg_val[exp.rd]
+                            ), UVM_NONE);
                         end
-                        exp_regs[exp.rd] = exp.value;
+                    end else begin
+                        pass_count++;
                     end
+                    exp_regs[exp.rd] = exp.value;
                 end
             end
         end
