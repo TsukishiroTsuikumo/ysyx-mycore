@@ -115,6 +115,8 @@ module mycore (
   reg         w1_en_id_ex;
   reg         sel_imm_id_ex;
   reg   [6:0] use_signal_id_ex;
+  reg  [31:0] r1_out_id_ex;
+  reg  [31:0] r2_out_id_ex;
 
   reg   [2:0] adder_op_id_ex;
   reg   [1:0] shifter_op_id_ex;
@@ -135,6 +137,8 @@ module mycore (
       w1_en_id_ex <= 1'b0;
       sel_imm_id_ex <= 1'b0;
       use_signal_id_ex <= 7'b0;
+      r1_out_id_ex <= 32'b0;
+      r2_out_id_ex <= 32'b0;
       adder_op_id_ex <= 3'b000;
       shifter_op_id_ex <= 2'b00;
       alu_op_id_ex <= 2'b00;
@@ -151,6 +155,8 @@ module mycore (
       w1_en_id_ex         <= sel_rd_id;
       sel_imm_id_ex       <= sel_imm_id;
       use_signal_id_ex    <= use_signal_id;
+      r1_out_id_ex        <= r1_out;
+      r2_out_id_ex        <= r2_out;
       adder_op_id_ex      <= adder_op_id;
       shifter_op_id_ex    <= shifter_op_id;
       alu_op_id_ex        <= alu_op_id;
@@ -184,8 +190,8 @@ module mycore (
   // --------------------------------------------- //
 
   wire [31:0] rs1, rs2;
-  assign rs1 = r1_out;
-  assign rs2 = sel_imm_id_ex ? imm_id_ex : r2_out;
+  assign rs1 = r1_out_id_ex;
+  assign rs2 = sel_imm_id_ex ? imm_id_ex : r2_out_id_ex;
 
   wire [31:0] aluC;
   wire [31:0] addC;

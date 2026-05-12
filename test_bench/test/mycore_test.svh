@@ -20,6 +20,10 @@ class mycore_test extends uvm_test;
         seq = mycore_sequence::type_id::create("seq");
         seq.start(env.agent.sequencer);
 
+        @(posedge env.agent.vif.clk);
+        env.agent.vif.pm_rd_in <= 32'b0;
+        repeat (5) @(posedge env.agent.vif.clk);
+
         phase.drop_objection(this);
     endtask
 

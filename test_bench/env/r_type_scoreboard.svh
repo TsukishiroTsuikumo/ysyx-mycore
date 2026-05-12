@@ -20,14 +20,24 @@ class r_type_scoreboard extends uvm_scoreboard;
         instr_imp = new("instr_imp", this);
     endfunction
 
+    function void load_initial_regs();
+        foreach (exp_regs[i]) begin
+            exp_regs[i] = probe_vif.init_reg_val[i];
+        end
+        exp_regs[0] = 32'b0;
+    endfunction
+
     virtual function void build_phase(uvm_phase phase);
         super.build_phase(phase);
         if (!uvm_config_db#(virtual state_probe_if)::get(this, "", "vif", probe_vif))
             `uvm_fatal("NOVIF", "scoreboard cannot get state_probe_if")
-        foreach (exp_regs[i]) exp_regs[i] = 32'b0;
+        load_initial_regs();
         pass_count = 0;
         fail_count = 0;
         empty_count = 0;
+        if (!probe_vif.reg_init_done) begin
+            `uvm_warning("SCORE", "scoreboard loaded register init values before reg_init_done was asserted")
+        end
     endfunction
 
     function automatic logic [31:0] calc_r_type(
@@ -77,9 +87,17 @@ class r_type_scoreboard extends uvm_scoreboard;
                         prod_uu = $unsigned(rs1_val) * $unsigned(rs2_val);
                         result = prod_uu[63:32];
                     end
-                    3'b100: result = (rs2_val == 0) ? 32'hFFFF_FFFF : $signed(rs1_val) / $signed(rs2_val);
+                    3'b100: begin
+                        if (rs2_val == 0) result = 32'hFFFF_FFFF;
+                        else if ((rs1_val == 32'h8000_0000) && (rs2_val == 32'hffff_ffff)) result = 32'h8000_0000;
+                        else result = $signed(rs1_val) / $signed(rs2_val);
+                    end
                     3'b101: result = (rs2_val == 0) ? 32'hFFFF_FFFF : $unsigned(rs1_val) / $unsigned(rs2_val);
-                    3'b110: result = (rs2_val == 0) ? rs1_val : $signed(rs1_val) % $signed(rs2_val);
+                    3'b110: begin
+                        if (rs2_val == 0) result = rs1_val;
+                        else if ((rs1_val == 32'h8000_0000) && (rs2_val == 32'hffff_ffff)) result = 32'b0;
+                        else result = $signed(rs1_val) % $signed(rs2_val);
+                    end
                     3'b111: result = (rs2_val == 0) ? rs1_val : $unsigned(rs1_val) % $unsigned(rs2_val);
                     default: result = 32'b0;
                 endcase
@@ -124,9 +142,10 @@ class r_type_scoreboard extends uvm_scoreboard;
             if (probe_vif.reset) begin
                 exp_q.delete();
                 foreach (exp_regs[i]) exp_regs[i] = 32'b0;
+                exp_regs[0] = 32'b0;
                 continue;
             end
-            if (probe_vif.w1_en) begin
+            if (probe_vif.wb_en) begin
                 if (exp_q.size() == 0) begin
                     empty_count++;
                     if (uvm_report_enabled(UVM_NONE, UVM_ERROR, "SCORE") != 0) begin
@@ -135,18 +154,29 @@ class r_type_scoreboard extends uvm_scoreboard;
                 end
                 else begin
                     exp = exp_q.pop_front();
-                    if (probe_vif.reg_val[exp.rd] !== exp.value) begin
+                    if (probe_vif.wb_addr !== exp.rd) begin
+                        fail_count++;
+                        if (uvm_report_enabled(UVM_NONE, UVM_ERROR, "SCORE") != 0) begin
+                            uvm_report_error("SCORE", $sformatf(
+                                "rd mismatch exp=x%0d act=x%0d",
+                                exp.rd, probe_vif.wb_addr
+                            ), UVM_NONE);
+                        end
+                    end
+                    else if ((exp.rd != 5'd0) && (probe_vif.wb_data !== exp.value)) begin
                         fail_count++;
                         if (uvm_report_enabled(UVM_NONE, UVM_ERROR, "SCORE") != 0) begin
                             uvm_report_error("SCORE", $sformatf(
                                 "rd x%0d exp=0x%08x act=0x%08x",
-                                exp.rd, exp.value, probe_vif.reg_val[exp.rd]
+                                exp.rd, exp.value, probe_vif.wb_data
                             ), UVM_NONE);
                         end
                     end else begin
                         pass_count++;
                     end
-                    exp_regs[exp.rd] = exp.value;
+                    if (exp.rd != 5'd0) begin
+                        exp_regs[exp.rd] = exp.value;
+                    end
                 end
             end
         end
@@ -156,8 +186,8 @@ class r_type_scoreboard extends uvm_scoreboard;
         super.report_phase(phase);
         if (uvm_report_enabled(UVM_NONE, UVM_INFO, "SCORE") != 0) begin
             uvm_report_info("SCORE", $sformatf(
-                "scoreboard summary: pass=%0d fail=%0d empty=%0d",
-                pass_count, fail_count, empty_count
+                "scoreboard summary: pass=%0d fail=%0d empty=%0d pending=%0d",
+                pass_count, fail_count, empty_count, exp_q.size()
             ), UVM_NONE);
         end
     endfunction
