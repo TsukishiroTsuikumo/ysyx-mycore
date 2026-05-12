@@ -1,4 +1,4 @@
-`define TEST_TIME 50
+`define TEST_TIME 200
 
 class mycore_sequence extends uvm_sequence #(mycore_item);
     

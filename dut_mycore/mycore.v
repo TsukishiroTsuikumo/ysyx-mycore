@@ -106,6 +106,21 @@ module mycore (
     
   );
 
+  wire [31:0] r1_out_id;
+  wire [31:0] r2_out_id;
+
+  reg_R regfile(
+    .clk(clk),
+    .reset(reset),
+    .r1_addr(rs1_addr_id),
+    .r1_out(r1_out_id), 
+    .r2_addr(rs2_addr_id),
+    .r2_out(r2_out_id),
+    .w1_en(w1_en_wb),
+    .w1_addr(w1_addr_wb),
+    .w1_in(w1_in_wb)
+  );
+
   // --------------------------------------------- //
   // ---------------- ID to EX ------------------- //
   // --------------------------------------------- //
@@ -155,8 +170,8 @@ module mycore (
       w1_en_id_ex         <= sel_rd_id;
       sel_imm_id_ex       <= sel_imm_id;
       use_signal_id_ex    <= use_signal_id;
-      r1_out_id_ex        <= r1_out;
-      r2_out_id_ex        <= r2_out;
+      r1_out_id_ex        <= r1_out_id;
+      r2_out_id_ex        <= r2_out_id;
       adder_op_id_ex      <= adder_op_id;
       shifter_op_id_ex    <= shifter_op_id;
       alu_op_id_ex        <= alu_op_id;
@@ -169,21 +184,6 @@ module mycore (
       PC_id_ex            <= PC_if_id;
     end
   end
-
-  wire [31:0] r1_out;
-  wire [31:0] r2_out;
-
-  reg_R regfile(
-    .clk(clk),
-    .reset(reset),
-    .r1_addr(rs1_addr_id),
-    .r1_out(r1_out), 
-    .r2_addr(rs2_addr_id),
-    .r2_out(r2_out),
-    .w1_en(w1_en_wb),
-    .w1_addr(w1_addr_wb),
-    .w1_in(w1_in_wb)
-  );
 
   // --------------------------------------------- //
   // ------- Pipe3 EX: Execute Instruction ------- //
