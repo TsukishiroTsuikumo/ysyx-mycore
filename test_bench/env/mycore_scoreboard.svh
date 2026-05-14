@@ -19,10 +19,10 @@ class mycore_scoreboard extends uvm_scoreboard;
         end
     endfunction
 
-    function void write(mycore_item item);
+    virtual function void write(mycore_item item);
         if (item == null) begin
             `uvm_warning("SCORE", "null item received")
-        return;
+            return;
         end
         instr_count++;
         `uvm_info("SCORE", $sformatf("instr %0d pm_rd_in=0x%08x",

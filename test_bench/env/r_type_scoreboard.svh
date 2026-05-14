@@ -1,8 +1,5 @@
-class r_type_scoreboard extends uvm_scoreboard;
+class r_type_scoreboard extends mycore_scoreboard;
     `uvm_component_utils(r_type_scoreboard)
-
-    uvm_analysis_imp #(mycore_item, r_type_scoreboard) instr_imp;
-    virtual state_probe_if probe_vif;
 
     typedef struct packed {
         logic [4:0]  rd;
@@ -17,7 +14,6 @@ class r_type_scoreboard extends uvm_scoreboard;
 
     function new(string name, uvm_component parent);
         super.new(name, parent);
-        instr_imp = new("instr_imp", this);
     endfunction
 
     function void load_initial_regs();
@@ -108,7 +104,7 @@ class r_type_scoreboard extends uvm_scoreboard;
         return result;
     endfunction
 
-    function void write(mycore_item item);
+    virtual function void write(mycore_item item);
         logic [31:0] instr;
         logic [6:0] opcode, funct7;
         logic [2:0] funct3;
@@ -116,6 +112,7 @@ class r_type_scoreboard extends uvm_scoreboard;
         exp_write_t exp;
 
         if (item == null) return;
+        instr_count++;
         instr = item.pm_rd_in;
         opcode = instr[6:0];
         if (opcode != 7'b0110011) return;

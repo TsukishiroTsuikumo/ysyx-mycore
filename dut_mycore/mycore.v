@@ -243,7 +243,7 @@ module mycore (
     .opcode(lsu_op_id_ex),
     .lsuA(rs1),
     .lsuB(rs2),
-    .st_value(r1_out),
+    .st_value(r2_out_id_ex),
     .dm_addr(dm_addr_ex),
     .dm_out(lsuC),
     .is_ld(dm_ld_ex),
