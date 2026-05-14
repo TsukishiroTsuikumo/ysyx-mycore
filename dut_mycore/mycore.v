@@ -9,9 +9,9 @@ module mycore (
   input	  [31:0]  dm_rd_in,
   output  [31:0]  dm_wr_out,
   output  [31:0]  dm_addr_out,
-  output	 [3:0]  dm_ld, // load enable signal
-  output	 [3:0]  dm_st, // store enable signal
-  input           ld_valid
+  output	 [3:0]  dm_ld_out, // load enable signal
+  output	 [3:0]  dm_st_out, // store enable signal
+  input           ld_valid_in
 );
 
   // ------------------------------------------- //
@@ -317,8 +317,8 @@ module mycore (
   // ----------Pipe4 MEM: Memory Access ------------ //
   // ----------------------------------------------- //
 
-  assign dm_ld = dm_ld_ex_mem;
-  assign dm_st = dm_st_ex_mem;
+  assign dm_ld_out = dm_ld_ex_mem;
+  assign dm_st_out = dm_st_ex_mem;
   assign dm_addr_out = dm_addr_ex_mem;
   assign dm_wr_out = pipe_ex_mem;
 
@@ -352,6 +352,6 @@ module mycore (
 
   wire  [4:0] w1_addr_wb = w1_addr_mem_wb;
   wire [31:0] w1_in_wb = is_ld_mem_wb ? dm_rd_in : pipe_mem_wb;
-  wire        w1_en_wb = w1_en_mem_wb && (!is_ld_mem_wb || ld_valid);
+  wire        w1_en_wb = w1_en_mem_wb && (!is_ld_mem_wb || ld_valid_in);
 
 endmodule

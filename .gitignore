@@ -3,6 +3,7 @@
 *.log
 *.json
 *.vcd
+!flist.f
 
 !*/
 !*.v
@@ -12,7 +13,6 @@
 !*.c
 !*.h
 !*.cpp
-!flist.f
 !.gitignore
 
 /obj_dir/

@@ -20,8 +20,8 @@ class mycore_monitor extends uvm_monitor;
         forever begin
             @(posedge vif.clk);
             item = mycore_item::type_id::create("item");
-            item.pm_rd_in = vif.pm_rd_in;
-            item.dm_rd_in = vif.dm_rd_in;
+            item.pm_rd    = vif.pm_rd;
+            item.dm_rd    = vif.dm_rd;
             item.ld_valid = vif.ld_valid;
             act_port.write(item);
         end

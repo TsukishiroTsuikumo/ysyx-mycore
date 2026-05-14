@@ -25,8 +25,6 @@ class mycore_scoreboard extends uvm_scoreboard;
             return;
         end
         instr_count++;
-        `uvm_info("SCORE", $sformatf("instr %0d pm_rd_in=0x%08x",
-                                    instr_count, item.pm_rd_in), UVM_LOW)
     endfunction
 
     virtual function void report_phase(uvm_phase phase);

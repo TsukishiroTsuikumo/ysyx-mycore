@@ -18,8 +18,8 @@ class mycore_driver extends uvm_driver #(mycore_item);
         forever begin
             seq_item_port.get_next_item(item);
             @(posedge vif.clk);
-            vif.pm_rd_in <= item.pm_rd_in;
-            vif.dm_rd_in <= item.dm_rd_in;
+            vif.pm_rd <= item.pm_rd;
+            vif.dm_rd <= item.dm_rd;
             vif.ld_valid <= item.ld_valid;
             seq_item_port.item_done();
         end

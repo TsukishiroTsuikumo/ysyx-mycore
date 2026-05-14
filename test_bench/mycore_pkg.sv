@@ -9,7 +9,6 @@ package mycore_pkg;
 
   `include "test_bench/seq/mycore_item.svh"
   `include "test_bench/seq/mycore_sequence.svh"
-  `include "test_bench/seq/r_type_item.svh"
 
   `include "test_bench/agent/mycore_sequencer.svh"
   `include "test_bench/agent/mycore_driver.svh"
@@ -18,10 +17,12 @@ package mycore_pkg;
   `include "test_bench/env/mycore_agent.svh"
   `include "test_bench/env/mycore_scoreboard.svh"
   `include "test_bench/env/mycore_env.svh"
-  `include "test_bench/env/r_type_scoreboard.svh"
 
   `include "test_bench/test/mycore_test.svh"
-  `include "test_bench/test/r_type_test.svh"
+
+  `include "r_type_test/r_type_item.svh"
+  `include "r_type_test/r_type_scoreboard.svh"
+  `include "r_type_test/r_type_test.svh"
 
 endpackage
 

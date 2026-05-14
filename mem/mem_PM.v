@@ -4,7 +4,7 @@ module mem_PM #(
     input               clk_pm,
     input               rst_pm,
 
-    input               ifetch,
+    input               ifetch_in,
     input       [31:0]  pm_addr_in,
     output  reg [31:0]  pm_data_out
 );
@@ -44,7 +44,7 @@ module mem_PM #(
     end
 
     always @(posedge clk_pm) begin
-        if (ifetch) begin
+        if (ifetch_in) begin
             pm_data_out <= {PM[addr_PM(pm_addr_in)+3], PM[addr_PM(pm_addr_in)+2], PM[addr_PM(pm_addr_in)+1], PM[addr_PM(pm_addr_in)]};
         end
         else begin

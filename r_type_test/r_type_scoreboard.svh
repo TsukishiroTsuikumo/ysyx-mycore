@@ -113,7 +113,7 @@ class r_type_scoreboard extends mycore_scoreboard;
 
         if (item == null) return;
         instr_count++;
-        instr = item.pm_rd_in;
+        instr = item.pm_rd;
         opcode = instr[6:0];
         if (opcode != 7'b0110011) return;
 

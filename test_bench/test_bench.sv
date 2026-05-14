@@ -50,15 +50,34 @@ module test_bench;
   mycore dut(
     .clk(clk),
     .reset(reset),
-    .pm_rd_in(mycore_if_inst.pm_rd_in),
-    .pm_addr_out(mycore_if_inst.pm_addr_out),
-    .ifetch(mycore_if_inst.ifetch),
-    .dm_rd_in(mycore_if_inst.dm_rd_in),
-    .dm_wr_out(mycore_if_inst.dm_wr_out),
-    .dm_addr_out(mycore_if_inst.dm_addr_out),
-    .dm_st(mycore_if_inst.dm_st_out),
-    .dm_ld(mycore_if_inst.dm_ld_out),
-    .ld_valid(mycore_if_inst.ld_valid)
+    .pm_rd_in(mycore_if_inst.dut_port.pm_rd),
+    .pm_addr_out(mycore_if_inst.dut_port.pm_addr),
+    .ifetch(mycore_if_inst.dut_port.ifetch),
+    .dm_rd_in(mycore_if_inst.dut_port.dm_rd),
+    .dm_wr_out(mycore_if_inst.dut_port.dm_wr),
+    .dm_addr_out(mycore_if_inst.dut_port.dm_addr),
+    .dm_st_out(mycore_if_inst.dut_port.dm_st),
+    .dm_ld_out(mycore_if_inst.dut_port.dm_ld),
+    .ld_valid_in(mycore_if_inst.dut_port.ld_valid)
+  );
+
+  mem_PM pm(
+    .clk_pm(clk),
+    .rst_pm(reset),
+    .ifetch_in(mycore_if_inst.PM_port.ifetch),
+    .pm_addr_in(mycore_if_inst.PM_port.pm_addr),
+    .pm_data_out(mycore_if_inst.PM_port.pm_rd)
+  );
+
+  mem_DM dm(
+    .clk_dm(clk),
+    .rst_dm(reset),
+    .dm_addr_in(mycore_if_inst.DM_port.dm_addr),
+    .dm_st_in(mycore_if_inst.DM_port.dm_st),
+    .dm_ld_in(mycore_if_inst.DM_port.dm_ld),
+    .dm_wr_in(mycore_if_inst.DM_port.dm_wr),
+    .dm_rd_out(mycore_if_inst.DM_port.dm_rd),
+    .ld_valid_out(mycore_if_inst.DM_port.ld_valid)
   );
 
   state_probe_if state_probe_if_inst(clk, reset);
@@ -86,15 +105,6 @@ module test_bench;
     foreach (state_probe_if_inst.init_reg_val[i]) begin
       state_probe_if_inst.init_reg_val[i] = 0;
     end
-    mycore_if_inst.pm_rd_in = 0;
-    mycore_if_inst.pm_addr_out = 0;
-    mycore_if_inst.ifetch = 0;
-    mycore_if_inst.dm_rd_in = 0;
-    mycore_if_inst.dm_wr_out = 0;
-    mycore_if_inst.dm_addr_out = 0;
-    mycore_if_inst.dm_st_out = 0;
-    mycore_if_inst.dm_ld_out = 0;
-    mycore_if_inst.ld_valid = 0;
   end
 
   initial begin

@@ -25,7 +25,7 @@ class r_type_item extends mycore_item;
             funct3 inside {3'b000, 3'b111, 3'b110, 3'b100, 3'b011, 3'b101};
         }
 
-        pm_rd_in == {funct7, rs2, rs1, funct3, rd, opcode};
+        pm_rd == {funct7, rs2, rs1, funct3, rd, opcode};
     }
 
     function new(string name = "r_type_item");
