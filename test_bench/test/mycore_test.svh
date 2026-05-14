@@ -2,6 +2,7 @@ class mycore_test extends uvm_test;
     `uvm_component_utils(mycore_test)
 
     virtual mycore_if vif;
+    mycore_agent_config agent_cfg;
     mycore_env env;
     mycore_sequence seq;
 
@@ -11,6 +12,8 @@ class mycore_test extends uvm_test;
 
     virtual function void build_phase(uvm_phase phase);
         super.build_phase(phase);
+        agent_cfg = mycore_agent_config::type_id::create("agent_cfg");
+        uvm_config_db#(mycore_agent_config)::set(this, "env.agent", "agent_cfg", agent_cfg);
         env = mycore_env::type_id::create("env", this);
     endfunction
 
@@ -21,7 +24,7 @@ class mycore_test extends uvm_test;
         seq.start(env.agent.sequencer);
 
         @(posedge env.agent.vif.clk);
-        env.agent.vif.pm_rd <= 32'b0;
+        env.agent.vif.pm_rd <= 32'h00000013;
         repeat (5) @(posedge env.agent.vif.clk);
 
         phase.drop_objection(this);

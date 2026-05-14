@@ -14,6 +14,7 @@ package mycore_pkg;
   `include "test_bench/agent/mycore_driver.svh"
   `include "test_bench/agent/mycore_monitor.svh"
 
+  `include "test_bench/env/mycore_agent_config.svh"
   `include "test_bench/env/mycore_agent.svh"
   `include "test_bench/env/mycore_scoreboard.svh"
   `include "test_bench/env/mycore_env.svh"
@@ -23,6 +24,11 @@ package mycore_pkg;
   `include "r_type_test/r_type_item.svh"
   `include "r_type_test/r_type_scoreboard.svh"
   `include "r_type_test/r_type_test.svh"
+
+  `include "program_test/program_item.svh"
+  `include "program_test/program_monitor.svh"
+  `include "program_test/program_scoreboard.svh"
+  `include "program_test/program_test.svh"
 
 endpackage
 
