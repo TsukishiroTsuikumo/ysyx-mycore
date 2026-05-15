@@ -16,8 +16,12 @@ module multiplier(
     assign b_in = is_used ? mpyB : 32'b0;
 
     reg [31:0] product;
-    wire signed [63:0] product_ss = $signed(a_in) * $signed(b_in);
-    wire signed [63:0] product_su = $signed(a_in) * $signed({1'b0, b_in});
+    wire signed [32:0] a_signed_ext = {a_in[31], a_in};
+    wire signed [32:0] b_signed_ext = {b_in[31], b_in};
+    wire signed [32:0] b_unsigned_ext = {1'b0, b_in};
+
+    wire signed [65:0] product_ss = a_signed_ext * b_signed_ext;
+    wire signed [65:0] product_su = a_signed_ext * b_unsigned_ext;
     wire        [63:0] product_uu = a_in * b_in;
 
     always @(*) begin

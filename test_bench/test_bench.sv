@@ -53,6 +53,7 @@ module test_bench;
     .pm_rd_in(mycore_if_inst.dut_port.pm_rd),
     .pm_addr_out(mycore_if_inst.dut_port.pm_addr),
     .ifetch(mycore_if_inst.dut_port.ifetch),
+    .ins_valid_in(mycore_if_inst.dut_port.ins_valid),
     .dm_rd_in(mycore_if_inst.dut_port.dm_rd),
     .dm_wr_out(mycore_if_inst.dut_port.dm_wr),
     .dm_addr_out(mycore_if_inst.dut_port.dm_addr),
@@ -66,6 +67,7 @@ module test_bench;
     .rst_pm(reset),
     .ifetch_in(mycore_if_inst.PM_port.ifetch),
     .pm_addr_in(mycore_if_inst.PM_port.pm_addr),
+    .pm_rd_valid_out(mycore_if_inst.PM_port.ins_valid),
     .pm_data_out(mycore_if_inst.PM_port.pm_rd)
   );
 
@@ -88,6 +90,7 @@ module test_bench;
     end
     assign state_probe_if_inst.pm_rd_in = dut.pm_rd_in;
     assign state_probe_if_inst.pc_val = dut.current_pc_if;
+    assign state_probe_if_inst.instr_accept = mycore_if_inst.ifetch && mycore_if_inst.ins_valid && !dut.hzd_stall[1];
     assign state_probe_if_inst.w1_en = dut.regfile.w1_en;
   endgenerate
 

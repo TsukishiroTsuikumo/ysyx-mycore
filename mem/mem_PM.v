@@ -6,6 +6,7 @@ module mem_PM #(
 
     input               ifetch_in,
     input       [31:0]  pm_addr_in,
+    output  reg         pm_rd_valid_out,
     output  reg [31:0]  pm_data_out
 );
 
@@ -16,6 +17,8 @@ module mem_PM #(
     reg [255*8:1] pmfile= "data.PM";
     reg [255*8:1] tmp_pmfile;
     initial begin
+        pm_rd_valid_out = 1'b0;
+        pm_data_out = 32'h00000013;
         if ($value$plusargs("PM=%s", tmp_pmfile)) begin
             pmfile = {tmp_pmfile, ".PM"};
         end
@@ -45,10 +48,11 @@ module mem_PM #(
 
     always @(posedge clk_pm) begin
         if (ifetch_in) begin
+            pm_rd_valid_out <= 1'b1;
             pm_data_out <= {PM[addr_PM(pm_addr_in)+3], PM[addr_PM(pm_addr_in)+2], PM[addr_PM(pm_addr_in)+1], PM[addr_PM(pm_addr_in)]};
         end
         else begin
-            pm_data_out <= 32'h00000013;
+            pm_rd_valid_out <= 1'b0;
         end
     end
 

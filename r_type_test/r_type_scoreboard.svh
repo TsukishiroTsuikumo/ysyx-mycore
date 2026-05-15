@@ -4,13 +4,17 @@ class r_type_scoreboard extends mycore_scoreboard;
     typedef struct packed {
         logic [4:0]  rd;
         logic [31:0] value;
+        logic [31:0] instr;
     } exp_write_t;
 
     exp_write_t exp_q[$];
+    exp_write_t act_q[$];
     logic [31:0] exp_regs[0:31];
     int unsigned pass_count;
     int unsigned fail_count;
     int unsigned empty_count;
+    int unsigned missing_count;
+    int unsigned extra_count;
 
     function new(string name, uvm_component parent);
         super.new(name, parent);
@@ -31,6 +35,8 @@ class r_type_scoreboard extends mycore_scoreboard;
         pass_count = 0;
         fail_count = 0;
         empty_count = 0;
+        missing_count = 0;
+        extra_count = 0;
         if (!probe_vif.reg_init_done) begin
             `uvm_warning("SCORE", "scoreboard loaded register init values before reg_init_done was asserted")
         end
@@ -44,12 +50,21 @@ class r_type_scoreboard extends mycore_scoreboard;
     );
         logic [31:0] result;
         logic [4:0] shamt;
-        longint signed   prod_ss;
-        longint unsigned prod_uu;
-        longint signed   prod_su;
+        logic signed [32:0] rs1_signed_ext;
+        logic signed [32:0] rs2_signed_ext;
+        logic signed [32:0] rs2_unsigned_ext;
+        logic signed [65:0] prod_ss;
+        logic signed [65:0] prod_su;
+        logic        [63:0] prod_uu;
 
         result = 32'b0;
         shamt = rs2_val[4:0];
+        rs1_signed_ext = {rs1_val[31], rs1_val};
+        rs2_signed_ext = {rs2_val[31], rs2_val};
+        rs2_unsigned_ext = {1'b0, rs2_val};
+        prod_ss = rs1_signed_ext * rs2_signed_ext;
+        prod_su = rs1_signed_ext * rs2_unsigned_ext;
+        prod_uu = rs1_val * rs2_val;
 
         case (funct7)
             7'b0000000: begin
@@ -71,18 +86,9 @@ class r_type_scoreboard extends mycore_scoreboard;
             7'b0000001: begin
                 case (funct3)
                     3'b000: result = rs1_val * rs2_val;
-                    3'b001: begin
-                        prod_ss = $signed(rs1_val) * $signed(rs2_val);
-                        result = prod_ss[63:32];
-                    end
-                    3'b010: begin
-                        prod_su = $signed(rs1_val) * $unsigned(rs2_val);
-                        result = prod_su[63:32];
-                    end
-                    3'b011: begin
-                        prod_uu = $unsigned(rs1_val) * $unsigned(rs2_val);
-                        result = prod_uu[63:32];
-                    end
+                    3'b001: result = prod_ss[63:32];
+                    3'b010: result = prod_su[63:32];
+                    3'b011: result = prod_uu[63:32];
                     3'b100: begin
                         if (rs2_val == 0) result = 32'hFFFF_FFFF;
                         else if ((rs1_val == 32'h8000_0000) && (rs2_val == 32'hffff_ffff)) result = 32'h8000_0000;
@@ -125,66 +131,91 @@ class r_type_scoreboard extends mycore_scoreboard;
 
         exp.rd = rd;
         exp.value = calc_r_type(funct7, funct3, exp_regs[rs1], exp_regs[rs2]);
+        exp.instr = instr;
         if (rd == 5'd0) begin
             exp.value = 32'b0;
         end
         exp_q.push_back(exp);
+        if (rd != 5'd0) begin
+            exp_regs[rd] = exp.value;
+        end
     endfunction
 
     task run_phase(uvm_phase phase);
-        exp_write_t exp;
+        exp_write_t act;
         forever begin
             @(posedge probe_vif.clk);
             uvm_wait_for_nba_region();
             if (probe_vif.reset) begin
                 exp_q.delete();
-                foreach (exp_regs[i]) exp_regs[i] = 32'b0;
-                exp_regs[0] = 32'b0;
+                act_q.delete();
+                load_initial_regs();
                 continue;
             end
             if (probe_vif.wb_en) begin
-                if (exp_q.size() == 0) begin
-                    empty_count++;
-                    if (uvm_report_enabled(UVM_NONE, UVM_ERROR, "SCORE") != 0) begin
-                        uvm_report_error("SCORE", "writeback seen but expected queue is empty", UVM_NONE);
-                    end
-                end
-                else begin
-                    exp = exp_q.pop_front();
-                    if (probe_vif.wb_addr !== exp.rd) begin
-                        fail_count++;
-                        if (uvm_report_enabled(UVM_NONE, UVM_ERROR, "SCORE") != 0) begin
-                            uvm_report_error("SCORE", $sformatf(
-                                "rd mismatch exp=x%0d act=x%0d",
-                                exp.rd, probe_vif.wb_addr
-                            ), UVM_NONE);
-                        end
-                    end
-                    else if ((exp.rd != 5'd0) && (probe_vif.wb_data !== exp.value)) begin
-                        fail_count++;
-                        if (uvm_report_enabled(UVM_NONE, UVM_ERROR, "SCORE") != 0) begin
-                            uvm_report_error("SCORE", $sformatf(
-                                "rd x%0d exp=0x%08x act=0x%08x",
-                                exp.rd, exp.value, probe_vif.wb_data
-                            ), UVM_NONE);
-                        end
-                    end else begin
-                        pass_count++;
-                    end
-                    if (exp.rd != 5'd0) begin
-                        exp_regs[exp.rd] = exp.value;
-                    end
-                end
+                act.rd = probe_vif.wb_addr;
+                act.value = probe_vif.wb_data;
+                act.instr = 32'b0;
+                act_q.push_back(act);
             end
         end
     endtask
+
+    virtual function void check_phase(uvm_phase phase);
+        exp_write_t exp;
+        exp_write_t act;
+        super.check_phase(phase);
+
+        while ((exp_q.size() != 0) && (act_q.size() != 0)) begin
+            exp = exp_q.pop_front();
+            act = act_q.pop_front();
+
+            if (act.rd !== exp.rd) begin
+                fail_count++;
+                `uvm_error("SCORE", $sformatf(
+                    "rd mismatch instr=0x%08x exp=x%0d act=x%0d",
+                    exp.instr, exp.rd, act.rd
+                ))
+            end
+            else if ((exp.rd != 5'd0) && (act.value !== exp.value)) begin
+                fail_count++;
+                `uvm_error("SCORE", $sformatf(
+                    "instr=0x%08x rd=x%0d exp=0x%08x act=0x%08x",
+                    exp.instr, exp.rd, exp.value, act.value
+                ))
+            end
+            else begin
+                pass_count++;
+            end
+        end
+
+        missing_count = exp_q.size();
+        extra_count = act_q.size();
+
+        while (exp_q.size() != 0) begin
+            exp = exp_q.pop_front();
+            `uvm_error("SCORE", $sformatf(
+                "missing commit instr=0x%08x rd=x%0d exp=0x%08x",
+                exp.instr, exp.rd, exp.value
+            ))
+        end
+
+        while (act_q.size() != 0) begin
+            act = act_q.pop_front();
+            empty_count++;
+            `uvm_error("SCORE", $sformatf(
+                "unexpected commit rd=x%0d data=0x%08x",
+                act.rd, act.value
+            ))
+        end
+    endfunction
 
     virtual function void report_phase(uvm_phase phase);
         super.report_phase(phase);
         if (uvm_report_enabled(UVM_NONE, UVM_INFO, "SCORE") != 0) begin
             uvm_report_info("SCORE", $sformatf(
-                "scoreboard summary: pass=%0d fail=%0d empty=%0d pending=%0d",
-                pass_count, fail_count, empty_count, exp_q.size()
+                "scoreboard summary: pass=%0d fail=%0d empty=%0d missing=%0d extra=%0d pending_exp=%0d pending_act=%0d",
+                pass_count, fail_count, empty_count, missing_count, extra_count, exp_q.size(), act_q.size()
             ), UVM_NONE);
         end
     endfunction

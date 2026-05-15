@@ -3,6 +3,7 @@ class program_item extends mycore_item;
 
     bit [31:0] pm_addr;
     bit        ifetch;
+    bit        ins_valid;
     bit [31:0] dm_wr;
     bit [31:0] dm_addr;
     bit [3:0]  dm_st;

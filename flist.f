@@ -3,6 +3,7 @@ dut_mycore/reg/reg_PC.v
 dut_mycore/reg/reg_R.v
 dut_mycore/controller/decoder.v
 dut_mycore/controller/controller.v
+dut_mycore/controller/hazard.v
 dut_mycore/fu/shifter.v
 dut_mycore/fu/multiplier.v
 dut_mycore/fu/alu.v

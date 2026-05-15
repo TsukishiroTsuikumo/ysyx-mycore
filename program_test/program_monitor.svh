@@ -41,6 +41,7 @@ class program_monitor extends mycore_monitor;
             pitem.ld_valid = vif.ld_valid;
             pitem.pm_addr  = vif.pm_addr;
             pitem.ifetch   = vif.ifetch;
+            pitem.ins_valid = vif.ins_valid;
             pitem.dm_wr    = vif.dm_wr;
             pitem.dm_addr  = vif.dm_addr;
             pitem.dm_st    = vif.dm_st;
@@ -57,7 +58,7 @@ class program_monitor extends mycore_monitor;
                               UVM_LOW)
                     done_ev.trigger(pitem);
                 end
-                else if (done_on_ebreak && pitem.ifetch && (pitem.pm_rd == EBREAK_INSTR)) begin
+                else if (done_on_ebreak && pitem.ifetch && pitem.ins_valid && (pitem.pm_rd == EBREAK_INSTR)) begin
                     done_seen = 1'b1;
                     `uvm_info("PROGRAM_DONE",
                               $sformatf("done ebreak: pc=0x%08h instr=0x%08h",

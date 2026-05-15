@@ -5,6 +5,7 @@ interface mycore_if(
     logic   [31:0]  pm_rd;
     logic   [31:0]  pm_addr;
     logic           ifetch;
+    logic           ins_valid;
     logic   [31:0]  dm_rd;
     logic   [31:0]  dm_wr;
     logic   [31:0]  dm_addr;
@@ -16,6 +17,7 @@ interface mycore_if(
         output pm_rd,
         output pm_addr,
         output ifetch,
+        output ins_valid,
         output dm_rd,
         output dm_wr,
         output dm_addr,
@@ -28,6 +30,7 @@ interface mycore_if(
         input   pm_rd,
         output  pm_addr,
         output  ifetch,
+        input   ins_valid,
         input   dm_rd,
         output  dm_wr,
         output  dm_addr,
@@ -38,6 +41,7 @@ interface mycore_if(
 
     modport PM_port (
         output pm_rd,
+        output ins_valid,
         input  pm_addr,
         input  ifetch
     );

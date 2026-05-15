@@ -68,7 +68,7 @@ class program_scoreboard extends mycore_scoreboard;
                           UVM_LOW)
             end
         end
-        else if (!done_seen && pitem.ifetch && (pitem.pm_rd == EBREAK_INSTR)) begin
+        else if (!done_seen && pitem.ifetch && pitem.ins_valid && (pitem.pm_rd == EBREAK_INSTR)) begin
             done_seen      = 1'b1;
             done_by_ebreak = 1'b1;
             actual_exit    = 32'h0;
