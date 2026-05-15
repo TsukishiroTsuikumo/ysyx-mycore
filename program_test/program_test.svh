@@ -9,7 +9,6 @@ class program_test extends mycore_test;
     endfunction
     
     virtual function void build_phase(uvm_phase phase);
-        uvm_test::build_phase(phase);
 
         mycore_monitor::type_id::set_type_override(program_monitor::get_type());
         mycore_scoreboard::type_id::set_type_override(program_scoreboard::get_type());

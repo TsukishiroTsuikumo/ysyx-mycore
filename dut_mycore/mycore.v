@@ -279,6 +279,7 @@ module mycore (
   reg [31:0] dm_addr_ex_mem;
   reg  [3:0] dm_ld_ex_mem;
   reg  [3:0] dm_st_ex_mem;
+  reg  [2:0] lsu_op_ex_mem;
 
   always @(posedge clk) begin
     if(flush_sig[2]) begin // flush
@@ -288,6 +289,7 @@ module mycore (
       dm_addr_ex_mem <= 32'b0;
       dm_ld_ex_mem <= 4'b0;
       dm_st_ex_mem <= 4'b0;
+      lsu_op_ex_mem <= 3'b0;
     end
     else begin
       case (jal_sig)
@@ -310,6 +312,7 @@ module mycore (
       dm_addr_ex_mem <= dm_addr_ex;
       dm_ld_ex_mem   <= dm_ld_ex;
       dm_st_ex_mem   <= dm_st_ex;
+      lsu_op_ex_mem  <= lsu_op_id_ex;
     end
   end
 
@@ -329,20 +332,23 @@ module mycore (
   reg [31:0]  pipe_mem_wb;
   reg  [4:0]  w1_addr_mem_wb;
   reg         w1_en_mem_wb;
-  reg         is_ld_mem_wb;
+  reg  [3:0]  dm_ld_mem_wb;
+  reg  [2:0]  lsu_op_mem_wb;
 
   always @(posedge clk) begin
     if(flush_sig[3]) begin // flush
       pipe_mem_wb <= 32'b0;
       w1_addr_mem_wb <= 5'b0;
       w1_en_mem_wb <= 1'b0;
-      is_ld_mem_wb <= 1'b0;
+      dm_ld_mem_wb <= 4'b0;
+      lsu_op_mem_wb <= 3'b0;
     end
     else begin
       pipe_mem_wb <= pipe_ex_mem;
       w1_addr_mem_wb <= w1_addr_ex_mem;
       w1_en_mem_wb <= w1_en_ex_mem;
-      is_ld_mem_wb <= (dm_ld_ex_mem != 4'b0) ? 1'b1 : 1'b0;
+      dm_ld_mem_wb <= dm_ld_ex_mem;
+      lsu_op_mem_wb <= lsu_op_ex_mem;
     end
   end
 
@@ -350,8 +356,20 @@ module mycore (
   // ------- Pipe5 WB: Write back and commit ------- //
   // ----------------------------------------------- //
 
+  wire        is_ld_wb = (dm_ld_mem_wb != 4'b0);
+  reg  [31:0] dm_rd_wb;
+  always @(*) begin
+    case(lsu_op_mem_wb)
+      3'b000: dm_rd_wb = {{24{dm_rd_in[7]}},  dm_rd_in[7:0]};   // lb
+      3'b001: dm_rd_wb = {{16{dm_rd_in[15]}}, dm_rd_in[15:0]};  // lh
+      3'b010: dm_rd_wb = dm_rd_in;                              // lw
+      3'b011: dm_rd_wb = {24'b0, dm_rd_in[7:0]};                // lbu
+      3'b100: dm_rd_wb = {16'b0, dm_rd_in[15:0]};               // lhu
+      default: dm_rd_wb = 32'b0;
+    endcase
+  end
   wire  [4:0] w1_addr_wb = w1_addr_mem_wb;
-  wire [31:0] w1_in_wb = is_ld_mem_wb ? dm_rd_in : pipe_mem_wb;
-  wire        w1_en_wb = w1_en_mem_wb && (!is_ld_mem_wb || ld_valid_in);
+  wire [31:0] w1_in_wb = is_ld_wb ? dm_rd_wb : pipe_mem_wb;
+  wire        w1_en_wb = w1_en_mem_wb && (!is_ld_wb || ld_valid_in);
 
 endmodule

@@ -30,7 +30,7 @@ module lsu (
 
             case(opcode)
                 lb: begin
-                    is_ld = 4'b1;
+                    is_ld = 4'b0001;
                 end
                 lh  : begin
                     is_ld = 4'b0011;

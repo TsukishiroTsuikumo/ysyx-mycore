@@ -43,7 +43,7 @@ module controller(
             flush_sig = 4'b0011;
         end
         else if(is_jalr) begin
-            npc = jalr_trgt;
+            npc = jalr_trgt & ~1;
             flush_sig = 4'b0011;
         end
         else if(is_jal) begin

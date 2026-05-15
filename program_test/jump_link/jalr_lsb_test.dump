@@ -1,0 +1,47 @@
+
+/tmp/jalr_lsb_test.elf:     file format elf32-littleriscv
+
+
+Disassembly of section .text:
+
+00000000 <_start>:
+   0:	04100413          	li	s0,65
+   4:	00000013          	nop
+   8:	00000013          	nop
+   c:	00000013          	nop
+  10:	00000013          	nop
+  14:	00000013          	nop
+  18:	00000013          	nop
+  1c:	00040067          	jr	s0
+  20:	00000013          	nop
+  24:	00000013          	nop
+  28:	00000013          	nop
+
+0000002c <fail>:
+  2c:	00100f93          	li	t6,1
+  30:	0240006f          	j	54 <finish>
+  34:	00000013          	nop
+  38:	00000013          	nop
+  3c:	00000013          	nop
+
+00000040 <target>:
+  40:	00000f93          	li	t6,0
+  44:	0100006f          	j	54 <finish>
+  48:	00000013          	nop
+  4c:	00000013          	nop
+  50:	00000013          	nop
+
+00000054 <finish>:
+  54:	00001537          	lui	a0,0x1
+  58:	00000013          	nop
+  5c:	00000013          	nop
+  60:	00000013          	nop
+  64:	00000013          	nop
+  68:	00000013          	nop
+  6c:	01f52023          	sw	t6,0(a0) # 1000 <done_loop+0xf90>
+
+00000070 <done_loop>:
+  70:	0000006f          	j	70 <done_loop>
+  74:	00000013          	nop
+  78:	00000013          	nop
+  7c:	00000013          	nop
