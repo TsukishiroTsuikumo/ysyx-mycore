@@ -4,17 +4,24 @@ module mycore (
   input			      clk,
   input			      reset,
 
-  output		      ifetch,
-  output  [31:0]  pm_addr_out,
-  input           ins_valid_in,
+  output		      pm_req_valid_out,
+  output  [31:0]  pm_req_addr_out,
+  input           pm_req_ready_in,
+  input           pm_resp_valid_in,
+  input   [31:0]  pm_resp_data_in,
 
-  input           ld_valid_in,
-  input	  [31:0]  pm_rd_in,
-  input	  [31:0]  dm_rd_in,
-  output  [31:0]  dm_wr_out,
-  output  [31:0]  dm_addr_out,
-  output	 [3:0]  dm_ld_out,
-  output	 [3:0]  dm_st_out
+  output  [31:0]  dm_req_addr_out,
+
+  output          dm_req_rvalid_out,
+  input           dm_req_rready_out,
+  input           dm_resp_rvalid_in,
+  input   [31:0]  dm_resp_rdata_in,
+
+  output          dm_req_wvalid_out,
+  input           dm_req_wready_in,
+  output   [3:0]  dm_req_wstrb_out,
+  output  [31:0]  dm_req_wdata_out,
+  input           dm_resp_wready_in
 );
 
   // ------------------------------------------- //
@@ -29,8 +36,12 @@ module mycore (
     .hzd_stall_in(hzd_stall[0]),
     .current_pc(current_pc_if),
     .next_pc(next_pc),
-    .ifetch(ifetch),
-    .pm_addr(pm_addr_out),
+
+    .pm_req_valid(pm_req_valid_out),
+    .pm_req_addr(pm_req_addr_out),
+    .pm_req_ready(pm_req_ready_in),
+    .pm_resp_valid(pm_resp_valid_in),
+
     .is_cd_jp(is_cd_jp_ex && valid_id_ex),
     .cd_jp_imm(imm_id_ex),
     .is_jal(is_jal_id && valid_ir_id),
@@ -77,25 +88,20 @@ module mycore (
   reg        valid_ir_id;
 
   always @(posedge clk or posedge reset) begin
-    if(reset) begin
+    if(reset | flush_sig[1]) begin
       instr_ir_id <= 32'b0;
-      PC_ir_id <= 32'b0;
-      valid_ir_id <= 1'b0;
-    end
-    else if(flush_sig[1]) begin // flush
-      instr_ir_id <= 32'b0;
-      PC_ir_id <= 32'b0;
+      PC_ir_id    <= 32'b0;
       valid_ir_id <= 1'b0;
     end
     else if(hzd_stall[1]) begin
       instr_ir_id <= instr_ir_id;
-      PC_ir_id <= PC_ir_id;
+      PC_ir_id    <= PC_ir_id;
       valid_ir_id <= valid_ir_id & valid[1];
     end
     else begin
       instr_ir_id <= pm_rd_in;
-      PC_ir_id <= PC_if_ir;
-      valid_ir_id <= valid[1];
+      PC_ir_id    <= PC_if_ir;
+      valid_ir_id <= valid[1] & pm_resp_valid_in;
     end
   end
 
@@ -374,7 +380,7 @@ module mycore (
   );
 
   wire [31:0] ret_addr = PC_id_ex + 4;
-  wire jal_sig = is_jal_id_ex | is_jalr_id_ex;
+  wire jal_sig = (is_jal_id_ex | is_jalr_id_ex) & valid_id_ex;
 
   // ----------------------------------------------- //
   // ----------------- EX to MEM ------------------- //
