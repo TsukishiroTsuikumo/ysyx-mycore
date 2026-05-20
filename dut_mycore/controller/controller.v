@@ -1,9 +1,8 @@
 module controller(
-    input               hzd_stall_in,
-
     input       [31:0]  current_pc,
     output      [31:0]  next_pc,
 
+    input               valid,
     output  reg         pm_req_valid,
     output  reg [31:0]  pm_req_addr,
     input               pm_req_ready,
@@ -22,16 +21,9 @@ module controller(
 );
 
     always @(*) begin
-        if(pm_resp_valid) begin
-            pm_req_valid = 1'b0;
-        end
-        else begin
-            pm_req_valid = 1'b1;
-        end
+        pm_req_valid = valid;
         pm_req_addr = current_pc;
     end
-
-    wire fire = pm_req_valid & pm_req_ready;
     
     wire btb_hit;
     wire [31:0] npc_cd;
@@ -61,10 +53,6 @@ module controller(
         end
         else if(btb_hit) begin
             npc = btb_target;
-            flush_sig = 5'b00000;
-        end
-        else if(hzd_stall_in) begin
-            npc = current_pc;
             flush_sig = 5'b00000;
         end
         else begin

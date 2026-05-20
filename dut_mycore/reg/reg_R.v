@@ -17,8 +17,10 @@ module reg_R
 
   reg [31:0] reg_val[0:31];
 
-  assign r1_out = (r1_addr == 5'd0) ? 32'b0 : reg_val[r1_addr];
-  assign r2_out = (r2_addr == 5'd0) ? 32'b0 : reg_val[r2_addr];
+  assign r1_out = (r1_addr == 0) ? 0 :
+                (w1_en && w1_addr == r1_addr) ? w1_in : reg_val[r1_addr];
+  assign r2_out = (r2_addr == 0) ? 0 :
+                (w1_en && w1_addr == r2_addr) ? w1_in : reg_val[r2_addr];
 
   always @( posedge clk or posedge reset) begin // Write
     if (reset) begin
