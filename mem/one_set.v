@@ -75,6 +75,7 @@ module one_set #(
     end
 
     // Line Read, with one cycle delay for combinational read
+    event read_line;
     reg [LINE_BYTES-1:0] rdata_strb_DLY1;
     reg                  rd_hit_DLY1;
     reg  [WAY_WIDTH-1:0] hit_way_DLY1;
@@ -83,18 +84,21 @@ module one_set #(
         rdata_strb_DLY1 <= rdata_strb_in;
         hit_way_DLY1 <= hit_way;
     end
-    always @(*) begin
+    always @( read_line or rdata_strb_DLY1 or hit_way_DLY1 or rd_req_in) begin
         integer i;
-        rdata_out = {LINE_WIDTH{1'b0}};
-        rd_fire_out = 1'b0;
-
         if (rd_hit_DLY1) begin
             for (i = 0; i < LINE_BYTES; i = i + 1) begin
                 if (rdata_strb_DLY1[i]) begin
                     rdata_out[i*8+7 -: 8] = cache_line[hit_way_DLY1][i*8+7 -: 8];
                 end
+                else begin
+                    rdata_out[i*8+7 -: 8] = 8'b0;
+                end
             end
             rd_fire_out = 1'b1;
+        end
+        else begin
+            rd_fire_out = 1'b0;
         end
     end
 
@@ -116,6 +120,7 @@ module one_set #(
                 end
                 line_state[hit_way][1] <= 1'b1;
                 wr_fire_out <= 1'b1;
+                -> read_line; // Trigger the read_line event to update rdata_out
             end
             else if (wr_refill_in) begin
                 cache_line[victim_way] <= wdata_in;

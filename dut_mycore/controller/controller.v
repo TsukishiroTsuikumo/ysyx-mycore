@@ -2,11 +2,7 @@ module controller(
     input       [31:0]  current_pc,
     output      [31:0]  next_pc,
 
-    input               valid,
-    output  reg         pm_req_valid,
-    output  reg [31:0]  pm_req_addr,
-    input               pm_req_ready,
-    input               pm_resp_valid,
+    output      [31:0]  pm_req_addr,
 
     // Control Signal
     input               is_cd_jp,
@@ -20,19 +16,14 @@ module controller(
     output  reg  [4:0]  flush_sig
 );
 
-    always @(*) begin
-        pm_req_valid = valid;
-        pm_req_addr = current_pc;
-    end
-    
-    wire btb_hit;
-    wire [31:0] npc_cd;
+    assign pm_req_addr = current_pc;
+
+    wire [31:0] npc_cd = jp_inst_pc + cd_jp_imm;
     wire [31:0] btb_target;
-    wire [31:0] npc_jal;
-    wire [31:0] npc_4;
-    assign npc_cd = jp_inst_pc + cd_jp_imm;
-    assign npc_jal = jal_pc + jal_imm;
-    assign npc_4 = current_pc + 4;
+    wire [31:0] npc_jal = jal_pc + jal_imm;
+    wire [31:0] npc_4 = current_pc + 4;
+
+    wire btb_hit;
     assign btb_hit = 1'b0;
     assign btb_target = 32'b0;
     // next pc

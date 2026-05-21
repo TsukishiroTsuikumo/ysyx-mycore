@@ -1,6 +1,7 @@
 ../dut_mycore/mycore.v
 ../dut_mycore/reg/reg_PC.v
 ../dut_mycore/reg/reg_R.v
+../dut_mycore/reg/instr_queue.v
 ../dut_mycore/controller/decoder.v
 ../dut_mycore/controller/controller.v
 ../dut_mycore/controller/hazard.v
