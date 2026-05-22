@@ -36,16 +36,16 @@ class program_monitor extends mycore_monitor;
             @(posedge vif.clk);
 
             pitem = program_item::type_id::create("pitem");
-            pitem.pm_rd    = vif.pm_rd;
-            pitem.dm_rd    = vif.dm_rd;
-            pitem.ld_valid = vif.ld_valid;
-            pitem.pm_addr  = vif.pm_addr;
-            pitem.ifetch   = vif.ifetch;
-            pitem.ins_valid = vif.ins_valid;
-            pitem.dm_wr    = vif.dm_wr;
-            pitem.dm_addr  = vif.dm_addr;
-            pitem.dm_st    = vif.dm_st;
-            pitem.dm_ld    = vif.dm_ld;
+            pitem.pm_rd    = vif.pm_resp_data;
+            pitem.dm_rd    = vif.dm_resp_rdata;
+            pitem.ld_valid = vif.dm_resp_rvalid;
+            pitem.pm_addr  = probe_vif.pc_val;
+            pitem.ifetch   = probe_vif.instr_accept;
+            pitem.ins_valid = probe_vif.instr_accept;
+            pitem.dm_wr    = vif.dm_req_wdata;
+            pitem.dm_addr  = vif.dm_req_addr;
+            pitem.dm_st    = vif.dm_req_wstrb;
+            pitem.dm_ld    = {3'b0, vif.dm_req_rvalid};
 
             act_port.write(pitem);
 

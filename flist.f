@@ -1,6 +1,7 @@
 dut_mycore/mycore.v
 dut_mycore/reg/reg_PC.v
 dut_mycore/reg/reg_R.v
+dut_mycore/reg/instr_queue.v
 dut_mycore/controller/decoder.v
 dut_mycore/controller/controller.v
 dut_mycore/controller/hazard.v
@@ -14,6 +15,10 @@ dut_mycore/fu/imu.v
 
 mem/mem_DM.v
 mem/mem_PM.v
+mem/one_set.v
+mem/Icache.v
+mem/Dcache.v
+mem/MEM.v
 
 test_bench/test_bench.sv
 test_bench/mycore_if.sv

@@ -28,9 +28,9 @@ class mycore_monitor extends uvm_monitor;
 
             if (probe_vif.instr_accept) begin
                 item = mycore_item::type_id::create("item");
-                item.pm_rd    = vif.pm_rd;
-                item.dm_rd    = vif.dm_rd;
-                item.ld_valid = vif.ld_valid;
+                item.pm_rd    = vif.pm_resp_data;
+                item.dm_rd    = vif.dm_resp_rdata;
+                item.ld_valid = vif.dm_resp_rvalid;
                 act_port.write(item);
             end
         end

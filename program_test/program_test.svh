@@ -17,12 +17,18 @@ class program_test extends mycore_test;
         agent_cfg.agent_type = UVM_PASSIVE;
         uvm_config_db#(mycore_agent_config)::set(this, "env.agent", "agent_cfg", agent_cfg);
         env = mycore_env::type_id::create("env", this);
+        if (!uvm_config_db#(virtual mycore_if)::get(this, "", "vif", vif))
+            `uvm_fatal("NOVIF", "test cannot get mycore_if")
+        if (!uvm_config_db#(virtual state_probe_if)::get(this, "", "vif", probe_vif))
+            `uvm_fatal("NOVIF", "test cannot get state_probe_if")
     endfunction
 
     virtual task run_phase(uvm_phase phase);
         bit done_seen;
 
         phase.raise_objection(this);
+
+        reset_and_init();
 
         timeout_cycles = 10000;
         done_seen = 1'b0;

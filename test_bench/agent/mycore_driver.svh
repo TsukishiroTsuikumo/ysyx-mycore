@@ -22,10 +22,13 @@ class mycore_driver extends uvm_driver #(mycore_item);
             seq_item_port.get_next_item(item);
             do begin
                 @(negedge vif.clk);
-                vif.pm_rd <= item.pm_rd;
-                vif.ins_valid <= 1'b1;
-                vif.dm_rd <= item.dm_rd;
-                vif.ld_valid <= item.ld_valid;
+                vif.pm_req_ready <= 1'b1;
+                vif.pm_resp_data <= item.pm_rd;
+                vif.pm_resp_valid <= 1'b1;
+                vif.dm_req_rready <= 1'b1;
+                vif.dm_req_wready <= 1'b1;
+                vif.dm_resp_rdata <= item.dm_rd;
+                vif.dm_resp_rvalid <= 1'b1;
                 @(posedge vif.clk);
             end while (probe_vif.reset || !probe_vif.instr_accept);
             seq_item_port.item_done();

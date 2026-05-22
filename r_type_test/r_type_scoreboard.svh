@@ -31,15 +31,11 @@ class r_type_scoreboard extends mycore_scoreboard;
         super.build_phase(phase);
         if (!uvm_config_db#(virtual state_probe_if)::get(this, "", "vif", probe_vif))
             `uvm_fatal("NOVIF", "scoreboard cannot get state_probe_if")
-        load_initial_regs();
         pass_count = 0;
         fail_count = 0;
         empty_count = 0;
         missing_count = 0;
         extra_count = 0;
-        if (!probe_vif.reg_init_done) begin
-            `uvm_warning("SCORE", "scoreboard loaded register init values before reg_init_done was asserted")
-        end
     endfunction
 
     function automatic logic [31:0] calc_r_type(
@@ -152,7 +148,7 @@ class r_type_scoreboard extends mycore_scoreboard;
                 load_initial_regs();
                 continue;
             end
-            if (probe_vif.wb_en) begin
+            if (probe_vif.commit) begin
                 act.rd = probe_vif.wb_addr;
                 act.value = probe_vif.wb_data;
                 act.instr = 32'b0;

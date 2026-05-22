@@ -6,8 +6,8 @@ module test_bench;
   import mycore_pkg::*;
 
   bit clk;
-  bit reset;
   int unsigned reg_init_seed;
+  int unsigned sim_timeout_cycles;
 
   function automatic logic [31:0] make_init_reg_value(
     input int unsigned index,
@@ -42,71 +42,61 @@ module test_bench;
 
   initial begin
     clk = 0;
-    reset = 0;
     forever #1 clk = ~clk;
   end
-  
-  mycore_if mycore_if_inst(clk, reset);
+
+  initial begin
+    sim_timeout_cycles = 200000;
+    void'($value$plusargs("SIM_TIMEOUT=%d", sim_timeout_cycles));
+    repeat (sim_timeout_cycles) @(posedge clk);
+    $fatal(1, "SIM_TIMEOUT: simulation exceeded %0d cycles", sim_timeout_cycles);
+  end
+
+  mycore_if mycore_if_inst(clk);
   mycore dut(
     .clk(clk),
-    .reset(reset),
-    .pm_rd_in(mycore_if_inst.dut_port.pm_rd),
-    .pm_addr_out(mycore_if_inst.dut_port.pm_addr),
-    .ifetch(mycore_if_inst.dut_port.ifetch),
-    .ins_valid_in(mycore_if_inst.dut_port.ins_valid),
-    .dm_rd_in(mycore_if_inst.dut_port.dm_rd),
-    .dm_wr_out(mycore_if_inst.dut_port.dm_wr),
-    .dm_addr_out(mycore_if_inst.dut_port.dm_addr),
-    .dm_st_out(mycore_if_inst.dut_port.dm_st),
-    .dm_ld_out(mycore_if_inst.dut_port.dm_ld),
-    .ld_valid_in(mycore_if_inst.dut_port.ld_valid)
+    .reset(mycore_if_inst.dut_port.reset),
+
+    .pm_req_valid_out(mycore_if_inst.dut_port.pm_req_valid),
+    .pm_req_addr_out(mycore_if_inst.dut_port.pm_req_addr),
+    .pm_req_ready_in(mycore_if_inst.dut_port.pm_req_ready),
+    .pm_resp_valid_in(mycore_if_inst.dut_port.pm_resp_valid),
+    .pm_resp_data_in(mycore_if_inst.dut_port.pm_resp_data),
+    .dm_req_addr_out(mycore_if_inst.dut_port.dm_req_addr),
+
+    .dm_req_rvalid_out(mycore_if_inst.dut_port.dm_req_rvalid),
+    .dm_req_rready_in(mycore_if_inst.dut_port.dm_req_rready),
+    .dm_resp_rvalid_in(mycore_if_inst.dut_port.dm_resp_rvalid),
+    .dm_resp_rdata_in(mycore_if_inst.dut_port.dm_resp_rdata),
+
+    .dm_req_wvalid_out(mycore_if_inst.dut_port.dm_req_wvalid),
+    .dm_req_wready_in(mycore_if_inst.dut_port.dm_req_wready),
+    .dm_req_wstrb_out(mycore_if_inst.dut_port.dm_req_wstrb),
+    .dm_req_wdata_out(mycore_if_inst.dut_port.dm_req_wdata),
+    .dm_resp_wvalid_in(mycore_if_inst.dut_port.dm_resp_wvalid)
   );
 
-  mem_PM pm(
-    .clk_pm(clk),
-    .rst_pm(reset),
-    .ifetch_in(mycore_if_inst.PM_port.ifetch),
-    .pm_addr_in(mycore_if_inst.PM_port.pm_addr),
-    .pm_rd_valid_out(mycore_if_inst.PM_port.ins_valid),
-    .pm_data_out(mycore_if_inst.PM_port.pm_rd)
-  );
-
-  mem_DM dm(
-    .clk_dm(clk),
-    .rst_dm(reset),
-    .dm_addr_in(mycore_if_inst.DM_port.dm_addr),
-    .dm_st_in(mycore_if_inst.DM_port.dm_st),
-    .dm_ld_in(mycore_if_inst.DM_port.dm_ld),
-    .dm_wr_in(mycore_if_inst.DM_port.dm_wr),
-    .dm_rd_out(mycore_if_inst.DM_port.dm_rd),
-    .ld_valid_out(mycore_if_inst.DM_port.ld_valid)
-  );
-
-  state_probe_if state_probe_if_inst(clk, reset);
+  state_probe_if state_probe_if_inst(clk, mycore_if_inst.reset);
   genvar i;
   generate
     for (i = 0; i < 32; i++) begin: gen_regfile_probe
       assign state_probe_if_inst.reg_val[i] = dut.regfile.reg_val[i];
     end
-    assign state_probe_if_inst.pm_rd_in = dut.pm_rd_in;
+    assign state_probe_if_inst.instr_val = dut.instr_id;
     assign state_probe_if_inst.pc_val = dut.current_pc_if;
-    assign state_probe_if_inst.instr_accept = mycore_if_inst.ifetch && mycore_if_inst.ins_valid && !dut.hzd_stall[1];
-    assign state_probe_if_inst.w1_en = dut.regfile.w1_en;
+    assign state_probe_if_inst.instr_accept = mycore_if_inst.pm_req_valid && mycore_if_inst.pm_resp_valid && !dut.if_stall;
   endgenerate
 
-  always @(posedge clk) begin
-    state_probe_if_inst.wb_en   <= dut.regfile.w1_en;
-    state_probe_if_inst.wb_addr <= dut.regfile.w1_addr;
-    state_probe_if_inst.wb_data <= dut.regfile.w1_in;
-  end
-
-  initial begin
-    state_probe_if_inst.reg_init_done = 0;
-    state_probe_if_inst.wb_en = 0;
-    state_probe_if_inst.wb_addr = 0;
-    state_probe_if_inst.wb_data = 0;
-    foreach (state_probe_if_inst.init_reg_val[i]) begin
-      state_probe_if_inst.init_reg_val[i] = 0;
+  always @(posedge clk or posedge mycore_if_inst.reset) begin
+    if (mycore_if_inst.reset) begin
+      state_probe_if_inst.commit  <= 1'b0;
+      state_probe_if_inst.wb_addr <= 5'b0;
+      state_probe_if_inst.wb_data <= 32'b0;
+    end
+    else begin
+      state_probe_if_inst.commit  <= dut.regfile.w1_en;
+      state_probe_if_inst.wb_addr <= dut.regfile.w1_addr;
+      state_probe_if_inst.wb_data <= dut.regfile.w1_in;
     end
   end
 
@@ -115,10 +105,17 @@ module test_bench;
     $dumpvars(0, test_bench);
   end
 
+  initial begin
+    forever begin
+      @state_probe_if_inst.reg_init_request;
+      initialize_register_file();
+    end
+  end
+
   string testname;
 
   initial begin
-    initialize_register_file();
+    mycore_if_inst.reset = 1'b1;
     uvm_config_db#(virtual mycore_if)::set(null, "*", "vif", mycore_if_inst);
     uvm_config_db#(virtual state_probe_if)::set(null, "*", "vif", state_probe_if_inst);
     if (!$value$plusargs("UVM_TESTNAME=%s", testname)) begin

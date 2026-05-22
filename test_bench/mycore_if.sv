@@ -1,58 +1,92 @@
 interface mycore_if(
-    input bit clk,
-    input bit reset
+    input bit clk
 );
-    logic   [31:0]  pm_rd;
-    logic   [31:0]  pm_addr;
-    logic           ifetch;
-    logic           ins_valid;
-    logic   [31:0]  dm_rd;
-    logic   [31:0]  dm_wr;
-    logic   [31:0]  dm_addr;
-    logic    [3:0]  dm_st;
-    logic    [3:0]  dm_ld;
-    logic           ld_valid;
+    logic           reset;
+
+    logic           pm_req_valid;
+    logic   [31:0]  pm_req_addr;
+    logic           pm_req_ready;
+    logic           pm_resp_valid;
+    logic   [31:0]  pm_resp_data;
+
+    logic   [31:0]  dm_req_addr;
+
+    logic           dm_req_rvalid;
+    logic           dm_req_rready;
+    logic           dm_resp_rvalid;
+    logic   [31:0]  dm_resp_rdata;
+
+    logic           dm_req_wvalid;
+    logic           dm_req_wready;
+    logic    [3:0]  dm_req_wstrb;
+    logic   [31:0]  dm_req_wdata;
+    logic           dm_resp_wvalid;
 
     modport driver_port (
-        output pm_rd,
-        output pm_addr,
-        output ifetch,
-        output ins_valid,
-        output dm_rd,
-        output dm_wr,
-        output dm_addr,
-        output dm_st,
-        output dm_ld,
-        output ld_valid
+        input   reset,
+        output  pm_req_valid,
+        output  pm_req_addr,
+        input   pm_req_ready,
+        input   pm_resp_valid,
+        input   pm_resp_data,
+
+        output  dm_req_addr,
+
+        output  dm_req_rvalid,
+        input   dm_req_rready,
+        input   dm_resp_rvalid,
+        input   dm_resp_rdata,
+
+        output  dm_req_wvalid,
+        input   dm_req_wready,
+        output  dm_req_wstrb,
+        output  dm_req_wdata,
+        input   dm_resp_wvalid
     );
 
     modport dut_port (
-        input   pm_rd,
-        output  pm_addr,
-        output  ifetch,
-        input   ins_valid,
-        input   dm_rd,
-        output  dm_wr,
-        output  dm_addr,
-        output  dm_st,
-        output  dm_ld,
-        input   ld_valid
+        input   reset,
+        output  pm_req_valid,
+        output  pm_req_addr,
+        input   pm_req_ready,
+        input   pm_resp_valid,
+        input   pm_resp_data,
+
+        output  dm_req_addr,
+
+        output  dm_req_rvalid,
+        input   dm_req_rready,
+        input   dm_resp_rvalid,
+        input   dm_resp_rdata,
+
+        output  dm_req_wvalid,
+        input   dm_req_wready,
+        output  dm_req_wstrb,
+        output  dm_req_wdata,
+        input   dm_resp_wvalid
     );
 
     modport PM_port (
-        output pm_rd,
-        output ins_valid,
-        input  pm_addr,
-        input  ifetch
+        input   pm_req_valid,
+        input   pm_req_addr,
+        output  pm_req_ready,
+        output  pm_resp_valid,
+        output  pm_resp_data
     );
 
     modport DM_port (
-        output  dm_rd,
-        input   dm_wr,
-        input   dm_addr,
-        input   dm_st,
-        input   dm_ld,
-        output  ld_valid
+        input   dm_req_addr,
+
+        input   dm_req_rvalid,
+        output  dm_req_rready,
+        output  dm_resp_rvalid,
+        output  dm_resp_rdata,
+
+        input   dm_req_wvalid,
+        output  dm_req_wready,
+        input   dm_req_wstrb,
+        input   dm_req_wdata,
+        output  dm_resp_wvalid
     );
     
 endinterface
