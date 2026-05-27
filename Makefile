@@ -37,7 +37,7 @@ checksv:
 	$(VERILATOR) -sv --lint-only -Wall -f flistsv.f
 
 clean:
-	rm -rf $(OBJ_DIR) *.vcd *.fst
+	rm -rf $(OBJ_DIR) *.vcd *.fst *.log
 
 .PHONY: build run clean
 

@@ -20,7 +20,11 @@ mem/Icache.v
 mem/Dcache.v
 mem/MEM.v
 
-test_bench/test_bench.sv
-test_bench/mycore_if.sv
-test_bench/state_probe_if.sv
+test_bench/wrap/mycore_wrapper.sv
+
+test_bench/interface/icache_if.sv
+test_bench/interface/dcache_if.sv
+test_bench/interface/probe_if.sv
+
 test_bench/mycore_pkg.sv
+test_bench/test_bench.sv
