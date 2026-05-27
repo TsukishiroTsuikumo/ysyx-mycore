@@ -1,5 +1,7 @@
 /*
 
+.gitignore
+
 *.log
 *.json
 *.vcd
@@ -16,3 +18,5 @@
 !.gitignore
 
 /obj_dir/
+/UVM/obj_dir/
+/UVM/

@@ -1,9 +1,4 @@
 module hazard(
-    // input               pm_req_ready,
-    // input               pm_req_valid,
-    // input               pm_req_ready_DLY1,
-    // input               pm_resp_valid,
-
     input               dm_req_rvalid,
     input               dm_req_rready,
     input               dm_req_rready_DLY1,
@@ -25,72 +20,33 @@ module hazard(
     input               valid_id_ex,
     input               valid_ex_mem,
     input               valid_mem_wb,
-    output  reg         raw_stall,
-    output  reg [5:0]   hzd_stall_out,
-    output  reg [5:0]   valid_out
+    output  reg [3:0]   hzd_stall_out,
+    output  reg [3:0]   valid_out
 );
 
     always @(*) begin
-        raw_stall = 1'b0;
-        hzd_stall_out = 6'b000000;
-        valid_out = 6'b111111;
-        // if( pm_req_valid && !pm_req_ready ) begin
-        //     hzd_stall_out[0] = 1'b1;
-        //     valid_out[0] = 1'b0;
-        // end
-        // if( pm_req_ready_DLY1 && !pm_resp_valid ) begin
-        //     hzd_stall_out[0] = 1'b1;
-        //     hzd_stall_out[1] = 1'b1;
-        //     valid_out[1] = 1'b0;
-        // end
-        // if(valid_id_ex && w1_en_id_ex && rd_addr_id_ex != 5'b0 &&
-        //    (rs1_addr_id == rd_addr_id_ex || rs2_addr_id == rd_addr_id_ex)) begin
-        //     hzd_stall_out[0] = 1'b1;
-        //     hzd_stall_out[1] = 1'b1;
-        //     hzd_stall_out[2] = 1'b1;
-        //     valid_out[2] = 1'b0;
-        // end
-        // if(valid_ex_mem && w1_en_ex_mem && rd_addr_ex_mem != 5'b0 &&
-        //     (rs1_addr_id == rd_addr_ex_mem || rs2_addr_id == rd_addr_ex_mem)) begin
-        //     hzd_stall_out[0] = 1'b1;
-        //     hzd_stall_out[1] = 1'b1;
-        //     hzd_stall_out[2] = 1'b1;
-        //     valid_out[2] = 1'b0;
-        // end
-        // if(valid_mem_wb && w1_en_mem_wb && rd_addr_mem_wb != 5'b0 &&
-        //     (rs1_addr_id == rd_addr_mem_wb || rs2_addr_id == rd_addr_mem_wb)) begin
-        //     hzd_stall_out[0] = 1'b1;
-        //     hzd_stall_out[1] = 1'b1;
-        //     hzd_stall_out[2] = 1'b1;
-        //     valid_out[2] = 1'b0;
-        // end
+        hzd_stall_out = 4'b0000;
+        valid_out = 4'b1111;
 
         if( (valid_id_ex  && w1_en_id_ex  && rd_addr_id_ex  != 5'b0 && (rs1_addr_id == rd_addr_id_ex  || rs2_addr_id == rd_addr_id_ex ))
         ||  (valid_ex_mem && w1_en_ex_mem && rd_addr_ex_mem != 5'b0 && (rs1_addr_id == rd_addr_ex_mem || rs2_addr_id == rd_addr_ex_mem))
-        ||  (valid_mem_wb && w1_en_mem_wb && rd_addr_mem_wb != 5'b0 && (rs1_addr_id == rd_addr_mem_wb || rs2_addr_id == rd_addr_mem_wb))
         ) begin
-           raw_stall = 1'b1;
-           valid_out[2] = 1'b0;
+           hzd_stall_out[0] = 1'b1;
+           valid_out[0] = 1'b0; //id
         end
-
-
         
         if( (dm_req_rvalid && !dm_req_rready) || (dm_req_wvalid && !dm_req_wready)) begin
-            hzd_stall_out[0] = 1'b1;
-            hzd_stall_out[1] = 1'b1;
-            hzd_stall_out[2] = 1'b1;
-            hzd_stall_out[3] = 1'b1;
-            hzd_stall_out[4] = 1'b1;
-            valid_out[4] = 1'b0;
+            hzd_stall_out[0] = 1'b1; //if to id
+            hzd_stall_out[1] = 1'b1; //id to ex
+            hzd_stall_out[2] = 1'b1; //ex to mem
+            valid_out[2] = 1'b0; //mem
         end
         if( (dm_req_rready_DLY1 && !dm_resp_rvalid) || (dm_req_wready_DLY1 && !dm_resp_wvalid) ) begin
             hzd_stall_out[0] = 1'b1;
             hzd_stall_out[1] = 1'b1;
             hzd_stall_out[2] = 1'b1;
-            hzd_stall_out[3] = 1'b1;
-            hzd_stall_out[4] = 1'b1;
-            hzd_stall_out[5] = 1'b1;
-            valid_out[5] = 1'b0;
+            hzd_stall_out[3] = 1'b1; //mem to wb
+            valid_out[3] = 1'b0; //wb
         end
     end
 

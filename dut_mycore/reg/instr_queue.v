@@ -37,6 +37,7 @@ module instr_queue #(
     reg [PTR_WIDTH:0] read_ptr;
     reg [PTR_WIDTH:0] pc_tail;
     reg [PTR_WIDTH:0] instr_tail;
+    reg [PTR_WIDTH:0] old_resp_drop_count;
 
     wire pc_empty = (pc_tail == read_ptr);
     wire pc_full = (pc_tail[PTR_WIDTH-1:0] == read_ptr[PTR_WIDTH-1:0]) && (pc_tail[PTR_WIDTH] != read_ptr[PTR_WIDTH]);
@@ -47,15 +48,32 @@ module instr_queue #(
     wire wr_pc_en = pm_req_valid && pm_req_ready;
     assign if_stall = !wr_pc_en;
 
-    wire wr_instr_en = pm_resp_valid && !instr_full;
+    wire [PTR_WIDTH:0] outstanding_resp_count = pc_tail - instr_tail;
+    wire [PTR_WIDTH:0] flush_req_count = wr_pc_en ? {{PTR_WIDTH{1'b0}}, 1'b1} : {PTR_WIDTH+1{1'b0}};
+    wire [PTR_WIDTH:0] flush_resp_count = (pm_resp_valid && ((outstanding_resp_count != {PTR_WIDTH+1{1'b0}}) || wr_pc_en)) ?
+                                            {{PTR_WIDTH{1'b0}}, 1'b1} : {PTR_WIDTH+1{1'b0}};
+    wire [PTR_WIDTH:0] flush_drop_count = outstanding_resp_count + flush_req_count - flush_resp_count;
+
+    wire drop_old_resp_en = pm_resp_valid && (old_resp_drop_count != {PTR_WIDTH+1{1'b0}});
+    wire wr_instr_en = pm_resp_valid && !drop_old_resp_en && !instr_full;
 
     wire rd_en = !pc_empty && !instr_empty;
 
     always @(posedge clk or posedge reset) begin
-        if (reset || flush) begin
+        if (reset) begin
             read_ptr <= 0;
             pc_tail <= 0;
             instr_tail <= 0;
+            old_resp_drop_count <= 0;
+            instr_out <= 32'h00000013;
+            pc_out <= 32'h00000000;
+            instr_valid <= 1'b0;
+        end
+        else if (flush) begin
+            read_ptr <= 0;
+            pc_tail <= 0;
+            instr_tail <= 0;
+            old_resp_drop_count <= flush_drop_count;
             instr_out <= 32'h00000013;
             pc_out <= 32'h00000000;
             instr_valid <= 1'b0;
@@ -70,6 +88,10 @@ module instr_queue #(
             if (wr_instr_en) begin
                 instr_fifo[instr_tail[PTR_WIDTH-1:0]] <= pm_resp_data;
                 instr_tail <= instr_tail + 1'b1;
+            end
+
+            if (drop_old_resp_en) begin
+                old_resp_drop_count <= old_resp_drop_count - 1'b1;
             end
 
             if (raw_stall) begin

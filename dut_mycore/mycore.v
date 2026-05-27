@@ -41,7 +41,7 @@ module mycore (
 
     .is_cd_jp(is_cd_jp_ex && valid_id_ex),
     .cd_jp_imm(imm_id_ex),
-    .is_jal(is_jal_id && valid[2]),
+    .is_jal(is_jal_id && valid[0]),
     .jal_pc(PC_id),
     .jal_imm(imm_id),
     .is_jalr(is_jalr_id_ex && valid_id_ex),
@@ -51,7 +51,7 @@ module mycore (
   );
   
   // --------------------------------------------- //
-  // ----------------- IF to IR ------------------ //
+  // ----------------- IF to ID ------------------ //
   // --------------------------------------------- //
 
   reg_PC PC(
@@ -62,28 +62,6 @@ module mycore (
     .pcr(current_pc_if)
   );
 
-  // reg  [31:0] PC_if_ir;
-  // reg         valid_if_ir;
-  // reg         pm_req_ready_if_ir;
-
-  // always @(posedge clk or posedge reset) begin
-  //   if(reset | flush_sig[0]) begin
-  //     PC_if_ir <= 32'b0;
-  //     valid_if_ir <= 1'b0;
-  //     pm_req_ready_if_ir <= 1'b0;
-  //   end
-  //   else if(hzd_stall[1]) begin
-  //     PC_if_ir <= PC_if_ir;
-  //     valid_if_ir <= valid_if_ir;
-  //     pm_req_ready_if_ir <= pm_req_ready_if_ir;
-  //   end
-  //   else begin
-  //     PC_if_ir <= current_pc_if;
-  //     valid_if_ir <= valid[0];
-  //     pm_req_ready_if_ir <= pm_req_ready_in;
-  //   end
-  // end
-
   instr_queue instr_queue_inst(
     .clk(clk),
     .reset(reset),
@@ -93,7 +71,7 @@ module mycore (
     .pm_resp_valid(pm_resp_valid_in),
     .pm_resp_data(pm_resp_data_in),
     .if_stall(if_stall),
-    .raw_stall(raw_stall),
+    .raw_stall(hzd_stall[0]),
     .flush(flush_sig[0]),
     .instr_out(instr_id),
     .pc_out(PC_id),
@@ -101,39 +79,7 @@ module mycore (
   );
 
   // --------------------------------------------- //
-  // -------- Pipe2 IR: Instruction Return ------- //
-  // --------------------------------------------- //
-
-
-
-  // --------------------------------------------- //
-  // ----------------- IR to ID ------------------ //
-  // --------------------------------------------- //
-  
-  // reg [31:0] PC_ir_id;
-  // reg        valid_ir_id;
-  // reg [31:0] instr_ir_id;
-
-  // always @(posedge clk or posedge reset) begin
-  //   if(reset | flush_sig[1]) begin
-  //     instr_ir_id <= 32'b0;
-  //     PC_ir_id    <= 32'b0;
-  //     valid_ir_id <= 1'b0;
-  //   end
-  //   else if(hzd_stall[2] && !valid[1]) begin
-  //     instr_ir_id <= instr_ir_id;
-  //     PC_ir_id    <= PC_ir_id;
-  //     valid_ir_id <= valid_ir_id;
-  //   end
-  //   else begin
-  //     instr_ir_id <= pm_resp_data_in;
-  //     PC_ir_id    <= PC_if_ir;
-  //     valid_ir_id <= valid_if_ir & valid[1];
-  //   end
-  // end
-
-  // --------------------------------------------- //
-  // -------- Pipe3 ID: Decode Instruction ------- //
+  // -------- Pipe2 ID: Decode Instruction ------- //
   // --------------------------------------------- //
   
   wire         instr_valid;
@@ -181,16 +127,10 @@ module mycore (
     .is_jalr(is_jalr_id)
   );
 
-  wire  [5:0] hzd_stall;
-  wire        raw_stall;
-  wire  [5:0] valid;
+  wire  [3:0] hzd_stall;
+  wire  [3:0] valid;
 
   hazard hazard_inst(
-    // .pm_req_ready(pm_req_ready_in),
-    // .pm_req_valid(pm_req_valid_out),
-    // .pm_req_ready_DLY1(pm_req_ready_in),
-    // .pm_resp_valid(pm_resp_valid_in),
-
     .dm_req_rvalid(dm_req_rvalid_out),
     .dm_req_rready(dm_req_rready_in),
     .dm_req_rready_DLY1(dm_req_rready_mem_wb),
@@ -213,7 +153,6 @@ module mycore (
     .valid_ex_mem(valid_ex_mem),
     .valid_mem_wb(valid_mem_wb),
 
-    .raw_stall(raw_stall),
     .hzd_stall_out(hzd_stall),
     .valid_out(valid)
   );
@@ -279,7 +218,7 @@ module mycore (
       PC_id_ex <= 32'b0;
       valid_id_ex <= 1'b0;
     end
-    else if(hzd_stall[3]) begin
+    else if(hzd_stall[1]) begin
       w1_addr_id_ex <= w1_addr_id_ex;
       imm_id_ex <= imm_id_ex;
       w1_en_id_ex <= w1_en_id_ex;
@@ -299,26 +238,6 @@ module mycore (
       PC_id_ex <= PC_id_ex;
       valid_id_ex <= valid_id_ex;
     end
-    // else if(!(valid_ir_id && valid[2])) begin
-    //   w1_addr_id_ex <= 5'b0;
-    //   imm_id_ex <= 32'b0;
-    //   w1_en_id_ex <= 1'b0;
-    //   sel_imm_id_ex <= 1'b0;
-    //   use_signal_id_ex <= 7'b0;
-    //   r1_out_id_ex <= 32'b0;
-    //   r2_out_id_ex <= 32'b0;
-    //   adder_op_id_ex <= 3'b000;
-    //   shifter_op_id_ex <= 2'b00;
-    //   alu_op_id_ex <= 2'b00;
-    //   multiplier_op_id_ex <= 4'b0000;
-    //   divider_op_id_ex <= 4'b0000;
-    //   lsu_op_id_ex <= 3'b000;
-    //   imu_op_id_ex <= 2'b00;
-    //   is_jal_id_ex <= 1'b0;
-    //   is_jalr_id_ex <= 1'b0;
-    //   PC_id_ex <= PC_ir_id;
-    //   valid_id_ex <= 1'b0;
-    // end
     else begin
       w1_addr_id_ex       <= rd_addr_id;
       imm_id_ex           <= imm_id;
@@ -337,7 +256,7 @@ module mycore (
       is_jal_id_ex        <= is_jal_id;
       is_jalr_id_ex       <= is_jalr_id;
       PC_id_ex            <= PC_id;
-      valid_id_ex         <= instr_valid && valid[2];
+      valid_id_ex         <= instr_valid && valid[0];
     end
   end
 
@@ -459,7 +378,7 @@ module mycore (
       lsu_op_ex_mem <= 3'b0;
       valid_ex_mem <= 1'b0;
     end
-    else if(hzd_stall[4]) begin
+    else if(hzd_stall[2]) begin
       w1_addr_ex_mem <= w1_addr_ex_mem;
       w1_en_ex_mem <= w1_en_ex_mem;
       pipe_ex_mem <= pipe_ex_mem;
@@ -469,16 +388,6 @@ module mycore (
       lsu_op_ex_mem <= lsu_op_ex_mem;
       valid_ex_mem <= valid_ex_mem;
     end
-    // else if(!(valid_id_ex && valid[3])) begin
-    //   w1_addr_ex_mem <= 5'b0;
-    //   w1_en_ex_mem <= 1'b0;
-    //   pipe_ex_mem <= 32'b0;
-    //   dm_addr_ex_mem <= 32'b0;
-    //   dm_ld_ex_mem <= 4'b0;
-    //   dm_st_ex_mem <= 4'b0;
-    //   lsu_op_ex_mem <= 3'b0;
-    //   valid_ex_mem <= 1'b0;
-    // end
     else begin
       case (jal_sig)
         1'b1: pipe_ex_mem <= ret_addr;
@@ -501,7 +410,7 @@ module mycore (
       dm_ld_ex_mem   <= dm_ld_ex;
       dm_st_ex_mem   <= dm_st_ex;
       lsu_op_ex_mem  <= lsu_op_id_ex;
-      valid_ex_mem   <= valid_id_ex & valid[3];
+      valid_ex_mem   <= valid_id_ex & valid[1];
     end
   end
 
@@ -539,7 +448,7 @@ module mycore (
       dm_req_rready_mem_wb <= 1'b0;
       dm_req_wready_mem_wb <= 1'b0;
     end
-    else if(hzd_stall[5]) begin
+    else if(hzd_stall[3]) begin
       pipe_mem_wb <= pipe_mem_wb;
       w1_addr_mem_wb <= w1_addr_mem_wb;
       w1_en_mem_wb <= w1_en_mem_wb;
@@ -549,16 +458,6 @@ module mycore (
       dm_req_wready_mem_wb <= dm_req_wready_mem_wb;
       valid_mem_wb <= valid_mem_wb;
     end
-    // else if(!(valid_ex_mem && valid[4])) begin
-    //   pipe_mem_wb <= 32'b0;
-    //   w1_addr_mem_wb <= 5'b0;
-    //   w1_en_mem_wb <= 1'b0;
-    //   dm_ld_mem_wb <= 4'b0;
-    //   lsu_op_mem_wb <= 3'b0;
-    //   dm_req_rready_mem_wb <= 1'b0;
-    //   dm_req_wready_mem_wb <= 1'b0;
-    //   valid_mem_wb <= 1'b0;
-    // end
     else begin
       pipe_mem_wb <= pipe_ex_mem;
       w1_addr_mem_wb <= w1_addr_ex_mem;
@@ -567,7 +466,7 @@ module mycore (
       lsu_op_mem_wb <= lsu_op_ex_mem;
       dm_req_rready_mem_wb <= dm_req_rready_in && dm_req_rvalid_out;
       dm_req_wready_mem_wb <= dm_req_wready_in && dm_req_wvalid_out;
-      valid_mem_wb <= valid_ex_mem & valid[4];
+      valid_mem_wb <= valid_ex_mem & valid[2];
     end
   end
 
@@ -589,6 +488,6 @@ module mycore (
   end
   wire  [4:0] w1_addr_wb = w1_addr_mem_wb;
   wire [31:0] w1_in_wb = is_ld_wb ? dm_rd_wb : pipe_mem_wb;
-  wire        commit_valid = w1_en_mem_wb && (!is_ld_wb || dm_resp_rvalid_in) && valid_mem_wb && valid[5];
+  wire        commit_valid = w1_en_mem_wb && (!is_ld_wb || dm_resp_rvalid_in) && valid_mem_wb && valid[3];
 
 endmodule
