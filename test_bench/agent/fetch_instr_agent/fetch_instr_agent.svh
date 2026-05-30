@@ -1,9 +1,9 @@
 class fetch_instr_agent extends uvm_agent;
     `uvm_component_utils(fetch_instr_agent)
 
-    fetch_instr_driver if_driver;
-    fetch_instr_monitor if_monitor;
-    fetch_instr_sequencer if_sequencer;
+    fetch_instr_driver driver;
+    fetch_instr_monitor monitor;
+    fetch_instr_sequencer sequencer;
 
     uvm_active_passive_enum is_active;
 
@@ -21,20 +21,20 @@ class fetch_instr_agent extends uvm_agent;
 
         if(is_active == UVM_ACTIVE) begin
             `uvm_info("FETCH_INSTR_AGENT", "Agent is active", UVM_LOW)
-            if_sequencer = fetch_instr_sequencer::type_id::create("if_sequencer", this);
-            if_driver = fetch_instr_driver::type_id::create("if_driver", this);
+            sequencer = fetch_instr_sequencer::type_id::create("sequencer", this);
+            driver = fetch_instr_driver::type_id::create("driver", this);
         end
         else begin
             `uvm_info("FETCH_INSTR_AGENT", "Agent is passive", UVM_LOW)
         end
-        if_monitor = fetch_instr_monitor::type_id::create("if_monitor", this);
+        monitor = fetch_instr_monitor::type_id::create("monitor", this);
 
     endfunction
 
     virtual function void connect_phase(uvm_phase phase);
         super.connect_phase(phase);
         if(is_active == UVM_ACTIVE) begin
-            if_driver.seq_item_port.connect(if_sequencer.seq_item_export);
+            driver.seq_item_port.connect(sequencer.seq_item_export);
         end
     endfunction
 

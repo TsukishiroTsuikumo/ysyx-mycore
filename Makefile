@@ -16,6 +16,7 @@ VERILATOR_FLAGS = \
 	--top-module $(TB_TOP) \
 	-I$(UVM_HOME)/src \
 	+incdir+$(UVM_HOME)/src \
+	+incdir+./test_bench \
 	$(UVM_HOME)/src/uvm_pkg.sv \
 	-F flist.f \
 	+define+UVM_NO_DPI
@@ -40,4 +41,3 @@ clean:
 	rm -rf $(OBJ_DIR) *.vcd *.fst *.log
 
 .PHONY: build run clean
-

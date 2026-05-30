@@ -36,6 +36,20 @@ class mycore_test extends uvm_test;
         repeat (2) @(posedge ic_vif.clk);
     endtask
 
+    virtual function int unsigned get_default_target_commits();
+        return `TEST_TIMES;
+    endfunction
+
+    virtual task pre_reset_setup();
+    endtask
+
+    virtual task start_main_sequence();
+        seq = instr_sequence::type_id::create("seq");
+        fork
+            seq.start(env.if_agent.sequencer);
+        join_none
+    endtask
+
     virtual task run_phase(uvm_phase phase);
         int unsigned commit_count;
         bit reached_target;
@@ -43,17 +57,15 @@ class mycore_test extends uvm_test;
 
         phase.raise_objection(this);
 
+        pre_reset_setup();
         reset_and_init();
 
-        target_commits = `TEST_TIMES;
+        target_commits = get_default_target_commits();
         void'($value$plusargs("TARGET_COMMITS=%d", target_commits));
         timeout_cycles = target_commits * 200 + 2000;
         void'($value$plusargs("TIMEOUT_CYCLES=%d", timeout_cycles));
 
-        seq = instr_sequence::type_id::create("seq");
-        fork
-            seq.start(env.if_agent.if_sequencer);
-        join_none
+        start_main_sequence();
 
         commit_count = 0;
         reached_target = 1'b0;

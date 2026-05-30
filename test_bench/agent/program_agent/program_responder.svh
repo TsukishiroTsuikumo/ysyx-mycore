@@ -1,36 +1,36 @@
-class fetch_instr_driver extends uvm_driver #(instr_item);
-    `uvm_component_utils(fetch_instr_driver)
+class program_responder extends fetch_instr_driver;
+    `uvm_component_utils(program_responder)
 
-    virtual icache_if vif;
-    instr_item item;
-    uvm_event#(uvm_object) test_done;
+    program_image image;
+    uvm_analysis_port#(instr_item) analysis_port;
 
     function new(string name, uvm_component parent);
         super.new(name, parent);
+        analysis_port = new("analysis_port", this);
     endfunction
 
     virtual function void build_phase(uvm_phase phase);
         super.build_phase(phase);
-        if(!uvm_config_db#(virtual icache_if)::get(this, "", "vif", vif)) begin
-            `uvm_fatal("FETCH_INSTR_DRIVER", "Virtual interface not found")
+        if (!uvm_config_db#(program_image)::get(this, "", "image", image)) begin
+            `uvm_fatal("PROGRAM_RESPONDER", "Failed to get program image from config DB");
         end
-        test_done = uvm_event_pool::get_global("test_done");
     endfunction
 
     virtual task run_phase(uvm_phase phase);
-
         instr_item item;
-        bit        resp_v_next;
+        bit        resp_valid_next;
         bit [31:0] resp_data_next;
         bit        req_fire_sample;
+        bit [31:0] req_addr_sample;
 
         vif.req_ready  <= 1'b0;
         vif.resp_valid <= 1'b0;
         vif.resp_data  <= 32'h0000_0013;
 
-        resp_v_next    = 1'b0;
-        resp_data_next = 32'h0000_0013;
+        resp_valid_next = 1'b0;
+        resp_data_next  = 32'h0000_0013;
         req_fire_sample = 1'b0;
+        req_addr_sample = 32'h0000_0000;
 
         fork
             begin
@@ -38,6 +38,7 @@ class fetch_instr_driver extends uvm_driver #(instr_item);
                     @(negedge vif.clk);
                     vif.req_ready <= !vif.rst;
                     req_fire_sample = !vif.rst && vif.req_valid;
+                    req_addr_sample = vif.req_addr;
                 end
             end
 
@@ -49,21 +50,26 @@ class fetch_instr_driver extends uvm_driver #(instr_item);
                         vif.req_ready  <= 1'b0;
                         vif.resp_valid <= 1'b0;
                         vif.resp_data  <= 32'h0000_0013;
-                        resp_v_next      = 1'b0;
-                        resp_data_next   = 32'h0000_0013;
-                        req_fire_sample  = 1'b0;
+                        resp_valid_next = 1'b0;
+                        resp_data_next  = 32'h0000_0013;
+                        req_fire_sample = 1'b0;
+                        req_addr_sample = 32'h0000_0000;
                     end
                     else begin
-                        vif.resp_valid <= resp_v_next;
+                        vif.resp_valid <= resp_valid_next;
                         vif.resp_data  <= resp_data_next;
 
-                        resp_v_next = 1'b0;
+                        if (resp_valid_next) begin
+                            item = instr_item::type_id::create("item");
+                            item.instr = resp_data_next;
+                            analysis_port.write(item);
+                        end
+
+                        resp_valid_next = 1'b0;
 
                         if (req_fire_sample) begin
-                            seq_item_port.get_next_item(item);
-                            resp_data_next = item.instr;
-                            resp_v_next    = 1'b1;
-                            seq_item_port.item_done();
+                            resp_data_next  = image.read_instr(req_addr_sample);
+                            resp_valid_next = 1'b1;
                         end
                     end
                 end
@@ -71,7 +77,6 @@ class fetch_instr_driver extends uvm_driver #(instr_item);
 
             begin
                 test_done.wait_ptrigger();
-                `uvm_info("FETCH_INSTR_DRIVER", "Test done event received, ending driver run phase", UVM_LOW)
             end
         join_any
         disable fork;
@@ -79,7 +84,6 @@ class fetch_instr_driver extends uvm_driver #(instr_item);
         vif.req_ready  <= 1'b0;
         vif.resp_valid <= 1'b0;
         vif.resp_data  <= 32'h0000_0013;
-
     endtask
 
 endclass

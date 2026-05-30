@@ -71,7 +71,7 @@ module mycore (
     .pm_resp_valid(pm_resp_valid_in),
     .pm_resp_data(pm_resp_data_in),
     .if_stall(if_stall),
-    .raw_stall(hzd_stall[0]),
+    .stall(hzd_stall[0]),
     .flush(flush_sig[0]),
     .instr_out(instr_id),
     .pc_out(PC_id),

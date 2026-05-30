@@ -28,6 +28,8 @@ package mycore_uvm_pkg;
     `include "agent/fetch_instr_agent/fetch_instr_driver.svh"
     `include "agent/fetch_instr_agent/fetch_instr_monitor.svh"
     `include "agent/fetch_instr_agent/fetch_instr_agent.svh"
+    `include "agent/program_agent/program_responder.svh"
+    `include "agent/program_agent/program_agent.svh"
 
     `include "agent/dmem_agent/dmem_sequencer.svh"
     `include "agent/dmem_agent/dmem_driver.svh"
@@ -39,11 +41,14 @@ package mycore_uvm_pkg;
 
     `include "scoreboard/mycore_scoreboard.svh"
     `include "env/mycore_env.svh"
+    `include "env/program_env.svh"
 
     `include "test/base_test/mycore_test.svh"
     `include "test/r_type_test/r_type_item.svh"
     `include "test/r_type_test/r_type_scoreboard.svh"
     `include "test/r_type_test/r_type_test.svh"
+    `include "test/program_test/program_scoreboard.svh"
+    `include "test/program_test/program_test.svh"
 
 endpackage
 
