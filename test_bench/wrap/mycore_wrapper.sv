@@ -45,30 +45,6 @@ module mycore_wrapper (
     wire [31:0]   core_dm_req_wdata;
     wire          core_dm_resp_wvalid;
 
-    wire          ic_req_rvalid;
-    wire          ic_req_rready;
-    wire [31:0]   ic_req_raddr;
-    wire          ic_resp_rvalid;
-    wire [127:0]  ic_resp_rdata;
-
-    wire          dc_req_rvalid;
-    wire          dc_req_rready;
-    wire [31:0]   dc_req_raddr;
-    wire          dc_resp_rvalid;
-    wire [127:0]  dc_resp_rdata;
-    wire          dc_req_wvalid;
-    wire          dc_req_wready;
-    wire [31:0]   dc_req_waddr;
-    wire [127:0]  dc_req_wdata;
-    wire          dc_resp_wvalid;
-
-    initial begin
-        use_cache = $test$plusargs("USE_CACHE");
-        if (use_cache) begin
-            $display("MYCORE_WRAPPER: USE_CACHE enabled");
-        end
-    end
-
     mycore u_core (
         .clk                (clk),
         .reset              (reset),
@@ -92,6 +68,30 @@ module mycore_wrapper (
         .dm_req_wdata_out   (core_dm_req_wdata),
         .dm_resp_wvalid_in  (core_dm_resp_wvalid)
     );
+
+    initial begin
+        use_cache = $test$plusargs("USE_CACHE");
+        if (use_cache) begin
+            $display("MYCORE_WRAPPER: USE_CACHE enabled");
+        end
+    end
+
+    wire          ic_req_rvalid;
+    wire          ic_req_rready;
+    wire [31:0]   ic_req_raddr;
+    wire          ic_resp_rvalid;
+    wire [127:0]  ic_resp_rdata;
+
+    wire          dc_req_rvalid;
+    wire          dc_req_rready;
+    wire [31:0]   dc_req_raddr;
+    wire          dc_resp_rvalid;
+    wire [127:0]  dc_resp_rdata;
+    wire          dc_req_wvalid;
+    wire          dc_req_wready;
+    wire [31:0]   dc_req_waddr;
+    wire [127:0]  dc_req_wdata;
+    wire          dc_resp_wvalid;
 
     assign pm_req_valid = core_pm_req_valid;
     assign pm_req_addr  = core_pm_req_addr;

@@ -1,4 +1,5 @@
 `timescale 1ns/1ps
+`define SIM_TIMEOUT_CYCLES 200000
 
 module test_bench;
 
@@ -10,12 +11,12 @@ module test_bench;
     int unsigned sim_timeout_cycles;
 
     initial begin
-        clk = 1'b0;
+        clk = 1'b1;
         forever #1 clk = ~clk;
     end
 
     initial begin
-        sim_timeout_cycles = 200000;
+        sim_timeout_cycles = `SIM_TIMEOUT_CYCLES;
         void'($value$plusargs("SIM_TIMEOUT=%d", sim_timeout_cycles));
         repeat (sim_timeout_cycles) @(posedge clk);
         $fatal(1, "SIM_TIMEOUT: simulation exceeded %0d cycles", sim_timeout_cycles);
@@ -105,7 +106,7 @@ module test_bench;
         uvm_config_db#(virtual probe_if) ::set(null, "*", "probe", probe_if_inst);
 
         if (!$value$plusargs("UVM_TESTNAME=%s", testname)) begin
-            testname = "instr_base_test";
+            testname = "program_test";
         end
         run_test(testname);
     end
