@@ -4,8 +4,6 @@ class program_sequence extends uvm_sequence #(instr_item);
     `uvm_object_utils(program_sequence)
 
     program_image image;
-    string mem_file;
-    bit use_mem_file;
 
     function new(string name = "program_sequence");
         super.new(name);
@@ -19,22 +17,12 @@ class program_sequence extends uvm_sequence #(instr_item);
         end
         image.clear();
 
-        use_mem_file = $value$plusargs("PROGRAM_MEM=%s", mem_file);
-        if (!use_mem_file) begin
-            use_mem_file = $value$plusargs("MEM_FILE=%s", mem_file);
-        end
-
-        if (use_mem_file) begin
-            image.load_mem(mem_file);
-        end
-        else begin
-            for (int unsigned i = 0; i < `TEST_TIMES; i++) begin
-                item = instr_item::type_id::create("item");
-                if(!item.randomize()) begin
-                    `uvm_fatal("PROGRAM_SEQUENCE", "Failed to randomize instruction item");
-                end
-                image.put_instr(i * 4, item.instr);
+        for (int unsigned i = 0; i < `TEST_TIMES; i++) begin
+            item = instr_item::type_id::create("item");
+            if(!item.randomize()) begin
+                `uvm_fatal("PROGRAM_SEQUENCE", "Failed to randomize instruction item");
             end
+            image.put_instr(i * 4, item.instr);
         end
         
         if(image.instr_count() == 0) begin

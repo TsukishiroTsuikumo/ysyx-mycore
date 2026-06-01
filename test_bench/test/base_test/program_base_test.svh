@@ -1,37 +1,42 @@
-class mycore_test extends uvm_test;
-    `uvm_component_utils(mycore_test)
+class program_base_test extends uvm_test;
+    `uvm_component_utils(program_base_test)
 
-    mycore_env env;
-    instr_sequence seq;
+    program_test_env env;
 
     virtual icache_if ic_vif;
+    virtual dcache_if dc_vif;
     virtual probe_if  probe_vif;
 
     int unsigned target_commits;
     int unsigned timeout_cycles;
 
-    function new(string name = "mycore_test", uvm_component parent);
+    function new(string name = "program_base_test", uvm_component parent);
         super.new(name, parent);
     endfunction
 
     virtual function void build_phase(uvm_phase phase);
         super.build_phase(phase);
-        env = mycore_env::type_id::create("env", this);
+        env = program_test_env::type_id::create("env", this);
         if(!uvm_config_db#(virtual icache_if)::get(this, "", "vif", ic_vif)) begin
-            `uvm_fatal("MYCORE_TEST", "Failed to get icache interface")
+            `uvm_fatal("PROGRAM_BASE_TEST", "Failed to get icache interface")
         end
         if(!uvm_config_db#(virtual probe_if)::get(this, "", "probe", probe_vif)) begin
-            `uvm_fatal("MYCORE_TEST", "Failed to get probe interface")
+            `uvm_fatal("PROGRAM_BASE_TEST", "Failed to get probe interface")
+        end
+        if(!uvm_config_db#(virtual dcache_if)::get(this, "", "vif", dc_vif)) begin
+            `uvm_fatal("PROGRAM_BASE_TEST", "Failed to get dcache interface")
         end
     endfunction
 
     virtual task reset_and_init();
         ic_vif.rst <= 1'b1;
+        dc_vif.rst <= 1'b1;
         probe_vif.reset <= 1'b1;
         repeat (5) @(posedge ic_vif.clk);
         @(negedge ic_vif.clk);
         probe_vif.request_reg_init();
         ic_vif.rst <= 1'b0;
+        dc_vif.rst <= 1'b0;
         probe_vif.reset <= 1'b0;
         repeat (2) @(posedge ic_vif.clk);
     endtask
@@ -44,10 +49,8 @@ class mycore_test extends uvm_test;
     endtask
 
     virtual task start_main_sequence();
-        seq = instr_sequence::type_id::create("seq");
-        fork
-            seq.start(env.if_agent.sequencer);
-        join_none
+        // Cache-system tests normally preload MEM and let the DUT fetch through
+        // Icache/Dcache. Subclasses may override this for generated images.
     endtask
 
     virtual task run_phase(uvm_phase phase);

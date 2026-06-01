@@ -37,14 +37,80 @@ module MEM #(
 
     reg [7:0] mem [0:MEM_BYTES-1];
 
+    task write_byte;
+        input [31:0] addr;
+        input [7:0] data;
+        begin
+            if (addr >= MEM_BYTES) begin
+                $display("Error: write_byte address out of bounds: %h", addr);
+            end
+            else begin
+                mem[addr] = data;
+            end
+        end
+    endtask
+
+    task write_word;
+        input [31:0] addr;
+        input [31:0] data;
+        begin
+            write_byte(addr + 0, data[7:0]);
+            write_byte(addr + 1, data[15:8]);
+            write_byte(addr + 2, data[23:16]);
+            write_byte(addr + 3, data[31:24]);
+        end
+    endtask
+
+    task load_word_image;
+        input [255*8:1] file_name;
+        integer fd;
+        integer code;
+        integer word_addr;
+        reg [31:0] instr;
+        reg [1023:0] line;
+        begin
+            fd = $fopen(file_name, "r");
+            if (fd == 0) begin
+                $display("Error: Failed to open memory image: %0s", file_name);
+            end
+            else begin
+                word_addr = 0;
+                while (!$feof(fd)) begin
+                    code = $fscanf(fd, "%h", instr);
+                    if (code == 1) begin
+                        write_word(word_addr << 2, instr);
+                        word_addr = word_addr + 1;
+                    end
+                    else begin
+                        code = $fgets(line, fd);
+                    end
+                end
+                $fclose(fd);
+                $display("MEM: loaded %0d 32-bit words from %0s", word_addr, file_name);
+            end
+        end
+    endtask
+
     // Initial memory
     reg [255*8:1] memfile = "program.mem";
     reg [251*8:1] tmp_memfile;
+    reg [255*8:1] exact_memfile;
+    integer init_idx;
     initial begin
+        for (init_idx = 0; init_idx < MEM_BYTES; init_idx = init_idx + 4) begin
+            mem[init_idx + 0] = 8'h13;
+            mem[init_idx + 1] = 8'h00;
+            mem[init_idx + 2] = 8'h00;
+            mem[init_idx + 3] = 8'h00;
+        end
+
         if($value$plusargs("MEM=%s",tmp_memfile)) begin
             memfile = {tmp_memfile, ".mem"};
+            load_word_image(memfile);
         end
-        $readmemh(memfile, mem);
+        else if($value$plusargs("MEM_FILE=%s",exact_memfile)) begin
+            load_word_image(exact_memfile);
+        end
     end
 
     function [31:0] aligned_addr(input [31:0] addr);

@@ -3,7 +3,7 @@ class mycore_scoreboard extends uvm_scoreboard;
 
     uvm_analysis_imp_instr  #(instr_item, mycore_scoreboard) instr_imp;
     uvm_analysis_imp_commit #(probe_item, mycore_scoreboard) commit_imp;
-    uvm_analysis_imp_dmem   #(dmem_item,  mycore_scoreboard) dmem_ap;
+    uvm_analysis_imp_dmem   #(fetch_data_item,  mycore_scoreboard) dmem_ap;
 
     int unsigned instr_count;
     int unsigned commit_count;
@@ -28,7 +28,7 @@ class mycore_scoreboard extends uvm_scoreboard;
         end
     endfunction
 
-    virtual function void write_dmem(dmem_item item);
+    virtual function void write_dmem(fetch_data_item item);
         if (item != null) begin
             dmem_count++;
         end

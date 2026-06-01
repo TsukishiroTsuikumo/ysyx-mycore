@@ -1,10 +1,10 @@
-class dmem_agent extends uvm_agent;
+class fetch_data_agent extends uvm_agent;
 
-    `uvm_component_utils(dmem_agent)
+    `uvm_component_utils(fetch_data_agent)
 
-    dmem_sequencer sequencer;
-    dmem_driver driver;
-    dmem_monitor monitor;
+    fetch_data_sequencer sequencer;
+    fetch_data_driver driver;
+    fetch_data_monitor monitor;
 
     uvm_active_passive_enum is_active;
 
@@ -17,17 +17,17 @@ class dmem_agent extends uvm_agent;
         if(!uvm_config_db#(uvm_active_passive_enum)::get(this, "", "is_active", is_active)) begin
             is_active = UVM_ACTIVE;
         end
-        void'($value$plusargs("DMEM_AGENT_ACTIVE=%b", is_active));
+        void'($value$plusargs("FETCH_DATA_AGENT_ACTIVE=%b", is_active));
 
         if(is_active == UVM_ACTIVE) begin
-            `uvm_info("DMEM_AGENT", "Agent is active", UVM_LOW)
-            sequencer = dmem_sequencer::type_id::create("sequencer", this);
-            driver = dmem_driver::type_id::create("driver", this);
+            `uvm_info("FETCH_DATA_AGENT", "Agent is active", UVM_LOW)
+            sequencer = fetch_data_sequencer::type_id::create("sequencer", this);
+            driver = fetch_data_driver::type_id::create("driver", this);
         end
         else begin
-            `uvm_info("DMEM_AGENT", "Agent is passive", UVM_LOW)
+            `uvm_info("FETCH_DATA_AGENT", "Agent is passive", UVM_LOW)
         end
-        monitor = dmem_monitor::type_id::create("monitor", this);
+        monitor = fetch_data_monitor::type_id::create("monitor", this);
     endfunction
 
     virtual function void connect_phase(uvm_phase phase);

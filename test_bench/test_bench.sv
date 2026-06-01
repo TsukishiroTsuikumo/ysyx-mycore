@@ -25,9 +25,6 @@ module test_bench;
     dcache_if dcache_if_inst(.clk(clk));
     probe_if  probe_if_inst (.clk(clk));
 
-    assign dcache_if_inst.rst = icache_if_inst.rst;
-    assign probe_if_inst.reset = icache_if_inst.rst;
-
     mycore_wrapper dut (
         .clk            (clk),
         .reset          (icache_if_inst.rst),
@@ -100,13 +97,15 @@ module test_bench;
     string testname;
     initial begin
         icache_if_inst.rst = 1'b1;
+        dcache_if_inst.rst = 1'b1;
+        probe_if_inst.reset = 1'b1;
 
         uvm_config_db#(virtual icache_if)::set(null, "*", "vif", icache_if_inst);
         uvm_config_db#(virtual dcache_if)::set(null, "*", "vif", dcache_if_inst);
         uvm_config_db#(virtual probe_if) ::set(null, "*", "probe", probe_if_inst);
 
         if (!$value$plusargs("UVM_TESTNAME=%s", testname)) begin
-            testname = "mycore_test";
+            testname = "instr_base_test";
         end
         run_test(testname);
     end

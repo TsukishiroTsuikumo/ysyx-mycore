@@ -1,4 +1,4 @@
-class r_type_test extends mycore_test;
+class r_type_test extends instr_base_test;
     `uvm_component_utils(r_type_test)
 
     function new(string name = "r_type_test", uvm_component parent);

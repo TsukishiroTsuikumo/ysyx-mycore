@@ -15,9 +15,10 @@ class fetch_instr_agent extends uvm_agent;
 
         super.build_phase(phase);
 
-        if(!$value$plusargs("FETCH_INSTR_AGENT_ACTIVE=%b", is_active)) begin
+        if(!uvm_config_db#(uvm_active_passive_enum)::get(this, "", "is_active", is_active)) begin
             is_active = UVM_ACTIVE;
         end
+        void'($value$plusargs("FETCH_INSTR_AGENT_ACTIVE=%b", is_active));
 
         if(is_active == UVM_ACTIVE) begin
             `uvm_info("FETCH_INSTR_AGENT", "Agent is active", UVM_LOW)

@@ -39,34 +39,4 @@ class program_image extends uvm_object;
         return image_words;
     endfunction
 
-    task load_mem(string file_name);
-        int fd;
-        int code;
-        int unsigned word_addr;
-        bit [31:0] instr;
-        string line;
-
-        clear();
-        fd = $fopen(file_name, "r");
-        if (fd == 0) begin
-            `uvm_fatal("PROGRAM_IMAGE", $sformatf("Failed to open mem file: %s", file_name))
-        end
-
-        word_addr = 0;
-        while (!$feof(fd)) begin
-            code = $fscanf(fd, "%h", instr);
-            if (code == 1) begin
-                put_instr(word_addr << 2, instr);
-                word_addr++;
-            end
-            else begin
-                void'($fgets(line, fd));
-            end
-        end
-
-        $fclose(fd);
-        `uvm_info("PROGRAM_IMAGE", $sformatf(
-            "Loaded %0d instruction words from %s", instr_count(), file_name), UVM_LOW)
-    endtask
-
 endclass

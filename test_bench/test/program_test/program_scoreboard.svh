@@ -18,6 +18,7 @@ class program_scoreboard extends mycore_scoreboard;
     } dmem_trace_t;
 
     virtual probe_if probe_vif;
+    program_image image;
 
     bit [31:0] instr_q[$];
     dmem_trace_t dmem_q[$];
@@ -41,6 +42,7 @@ class program_scoreboard extends mycore_scoreboard;
         if (!uvm_config_db#(virtual probe_if)::get(this, "", "probe", probe_vif)) begin
             `uvm_fatal("PROGRAM_SCOREBOARD", "Failed to get probe interface")
         end
+        void'(uvm_config_db#(program_image)::get(this, "", "image", image));
     endfunction
 
     function void load_initial_regs();
@@ -379,6 +381,12 @@ class program_scoreboard extends mycore_scoreboard;
             load_initial_regs();
         end
 
+        if ((instr_q.size() == 0) && (image != null)) begin
+            foreach (image.linear_instr_q[i]) begin
+                instr_q.push_back(image.linear_instr_q[i]);
+            end
+        end
+
         ref_pc = 32'b0;
         while ((instr_q.size() != 0) && (exp_q.size() < act_q.size())) begin
             instr = instr_q.pop_front();
@@ -405,7 +413,7 @@ class program_scoreboard extends mycore_scoreboard;
         act_q.push_back(act);
     endfunction
 
-    virtual function void write_dmem(dmem_item item);
+    virtual function void write_dmem(fetch_data_item item);
         dmem_trace_t trace;
 
         super.write_dmem(item);
