@@ -6,6 +6,12 @@ RUN_ARGS 			?= +UVM_TESTNAME=$(TEST)
 VERILATOR_SOLVER 	= z3 --in
 export VERILATOR_SOLVER
 
+CXX 				?= g++
+C_MODEL_DIR 		:= C_model
+C_MODEL_BIN 		:= $(C_MODEL_DIR)/cmodel
+C_MODEL_SRCS 		:= $(C_MODEL_DIR)/main.cpp $(C_MODEL_DIR)/model.cpp $(C_MODEL_DIR)/state.cpp
+C_MODEL_FLAGS 		:= -std=c++17 -Wall -Wextra -I $(C_MODEL_DIR)
+
 VERILATOR_FLAGS = \
 	-sv \
 	--timing \
@@ -38,6 +44,20 @@ checksv:
 	$(VERILATOR) -sv --lint-only -Wall -f flistsv.f
 
 clean:
-	rm -rf $(OBJ_DIR) *.vcd *.fst *.log
+	rm -rf $(OBJ_DIR) *.vcd *.fst *.log $(C_MODEL_BIN)
 
-.PHONY: build run clean
+cmodel:
+	$(CXX) $(C_MODEL_FLAGS) $(C_MODEL_SRCS) -o $(C_MODEL_BIN)
+
+image:
+	riscv64-unknown-elf-gcc ./scripts/start.S \
+		./csrc/main.cpp \
+		-march=rv32im -mabi=ilp32 \
+		-nostdlib -nostartfiles -ffreestanding \
+		-Wl,-T,./scripts/linker.ld \
+		-o test.elf
+	riscv64-unknown-elf-objcopy -O binary test.elf test.bin
+	xxd -e -g 4 -c 4 test.bin | awk '{print $$2}' > image.mem
+	rm -f test.elf test.bin
+
+.PHONY: build run clean image cmodel
