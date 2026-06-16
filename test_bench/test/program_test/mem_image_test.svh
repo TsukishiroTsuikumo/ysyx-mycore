@@ -10,10 +10,4 @@ class mem_image_test extends program_base_test;
         super.build_phase(phase);
     endfunction
 
-    virtual task start_main_sequence();
-        // MEM loads the image file through +MEM=<base> or +MEM_FILE=<path>.
-        // The DUT fetches through Icache/MEM, and cache_system_monitor sends
-        // returned instructions to the scoreboard.
-    endtask
-
 endclass

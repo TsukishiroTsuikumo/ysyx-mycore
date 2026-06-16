@@ -41,15 +41,15 @@ class fetch_data_driver extends uvm_driver #(fetch_data_item);
             begin
                 forever begin
                     @(negedge vif.clk);
-                    vif.req_rready <= !vif.rst && !read_busy && !write_busy;
-                    vif.req_wready <= !vif.rst && !read_busy && !write_busy;
+                    vif.req_rready <= !vif.reset && !read_busy && !write_busy;
+                    vif.req_wready <= !vif.reset && !read_busy && !write_busy;
                 end
             end
 
             begin
                 forever begin
                     @(posedge vif.clk);
-                    if(vif.rst) begin
+                    if(vif.reset) begin
                         vif.req_rready <= 1'b0;
                         vif.req_wready <= 1'b0;
                         vif.resp_rvalid <= 1'b0;

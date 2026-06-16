@@ -2,7 +2,7 @@
 `define NEW_MYCORE_PKG_SV
 `timescale 1ns/1ps
 
-package mycore_uvm_pkg;
+package mycore_pkg;
 
     import uvm_pkg::*;
     `include "uvm_macros.svh"
@@ -14,6 +14,8 @@ package mycore_uvm_pkg;
     `uvm_analysis_imp_decl(_instr)
     `uvm_analysis_imp_decl(_commit)
     `uvm_analysis_imp_decl(_dmem)
+
+    `include "cmodel_dpi.svh"
 
     `include "item/instr_item.svh"
     `include "item/fetch_data_item.svh"
@@ -56,24 +58,22 @@ package mycore_uvm_pkg;
 
     `include "test/base_test/instr_base_test.svh"
     `include "test/base_test/program_base_test.svh"
-    `include "test/r_type_test/r_type_item.svh"
-    `include "test/r_type_test/r_type_scoreboard.svh"
-    `include "test/r_type_test/r_type_test.svh"
-    `include "test/core_only_test/ld_item.svh"
-    `include "test/core_only_test/st_item.svh"
-    `include "test/core_only_test/jp_link_item.svh"
-    `include "test/core_only_test/st_scoreboard.svh"
-    `include "test/core_only_test/jp_link_scoreboard.svh"
+    `include "test/base_test/cache_base_test.svh"
+    `include "test/core_only_test/r_type_test/r_type_item.svh"
+    `include "test/core_only_test/r_type_test/r_type_scoreboard.svh"
+    `include "test/core_only_test/r_type_test/r_type_test.svh"
+    `include "test/core_only_test/ld_test/ld_item.svh"
+    `include "test/core_only_test/st_test/st_item.svh"
+    `include "test/core_only_test/jp_link_test/jp_link_item.svh"
+    `include "test/core_only_test/ld_test/ld_scoreboard.svh"
+    `include "test/core_only_test/st_test/st_scoreboard.svh"
+    `include "test/core_only_test/jp_link_test/jp_link_scoreboard.svh"
     `include "test/program_test/program_scoreboard.svh"
-    `include "test/program_test/branch_matrix_scoreboard.svh"
-    `include "test/core_only_test/ld_test.svh"
-    `include "test/core_only_test/st_test.svh"
-    `include "test/core_only_test/jp_link_test.svh"
+    `include "test/core_only_test/ld_test/ld_test.svh"
+    `include "test/core_only_test/st_test/st_test.svh"
+    `include "test/core_only_test/jp_link_test/jp_link_test.svh"
     `include "test/program_test/program_test.svh"
     `include "test/program_test/mem_image_test.svh"
-    `include "test/program_test/ldst_image_test.svh"
-    `include "test/program_test/branch_matrix_test.svh"
-    `include "test/cache_test/cache_base_test.svh"
     `include "test/cache_test/icache_test.svh"
     `include "test/cache_test/dcache_test.svh"
 

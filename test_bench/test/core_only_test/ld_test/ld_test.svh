@@ -9,7 +9,7 @@ class ld_test extends instr_base_test;
 
     virtual function void build_phase(uvm_phase phase);
         instr_item::type_id::set_type_override(ld_item::get_type());
-        mycore_scoreboard::type_id::set_type_override(program_scoreboard::get_type());
+        mycore_scoreboard::type_id::set_type_override(ld_scoreboard::get_type());
         super.build_phase(phase);
     endfunction
 

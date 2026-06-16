@@ -29,14 +29,19 @@ class program_base_test extends uvm_test;
     endfunction
 
     virtual task reset_and_init();
-        ic_vif.rst <= 1'b1;
-        dc_vif.rst <= 1'b1;
+        int unsigned idx;
+        ic_vif.reset <= 1'b1;
+        dc_vif.reset <= 1'b1;
         probe_vif.reset <= 1'b1;
         repeat (5) @(posedge ic_vif.clk);
         @(negedge ic_vif.clk);
         probe_vif.request_reg_init();
-        ic_vif.rst <= 1'b0;
-        dc_vif.rst <= 1'b0;
+        cmodel_set_pc(32'h0000_0000);
+        for (idx = 0; idx < 32; idx++) begin
+            cmodel_set_reg(idx, probe_vif.init_reg_value[idx]);
+        end
+        ic_vif.reset <= 1'b0;
+        dc_vif.reset <= 1'b0;
         probe_vif.reset <= 1'b0;
         repeat (2) @(posedge ic_vif.clk);
     endtask
@@ -46,15 +51,22 @@ class program_base_test extends uvm_test;
     endfunction
 
     virtual task pre_reset_setup();
-    endtask
-
-    virtual task start_main_sequence();
-        // Cache-system tests normally preload MEM and let the DUT fetch through
-        // Icache/Dcache. Subclasses may override this for generated images.
+        string mem_file;
+        if ($value$plusargs("MEM_FILE=%s", mem_file)) begin
+            if (!cmodel_init_from_file(mem_file)) begin
+                `uvm_fatal("PROGRAM_BASE_TEST", $sformatf(
+                    "C model failed to load MEM_FILE=%0s", mem_file))
+            end
+        end
+        else begin
+            if (!cmodel_init_empty()) begin
+                `uvm_fatal("PROGRAM_BASE_TEST", "C model failed to initialize")
+            end
+        end
     endtask
 
     virtual task run_phase(uvm_phase phase);
-        int unsigned commit_count;
+        int unsigned retire_count;
         bit reached_target;
         bit timeout_hit;
 
@@ -68,9 +80,7 @@ class program_base_test extends uvm_test;
         timeout_cycles = target_commits * 200 + 2000;
         void'($value$plusargs("TIMEOUT_CYCLES=%d", timeout_cycles));
 
-        start_main_sequence();
-
-        commit_count = 0;
+        retire_count = 0;
         reached_target = 1'b0;
         timeout_hit = 1'b0;
 
@@ -80,11 +90,11 @@ class program_base_test extends uvm_test;
                     @(posedge probe_vif.clk);
                     uvm_wait_for_nba_region();
                     if (probe_vif.reset) begin
-                        commit_count = 0;
+                        retire_count = 0;
                     end
-                    else if (probe_vif.commit) begin
-                        commit_count++;
-                        if (commit_count >= target_commits) begin
+                    else if (probe_vif.retire) begin
+                        retire_count++;
+                        if (retire_count >= target_commits) begin
                             reached_target = 1'b1;
                             break;
                         end
@@ -101,7 +111,7 @@ class program_base_test extends uvm_test;
         if (timeout_hit && !reached_target) begin
             `uvm_error("TEST_TIMEOUT", $sformatf(
                 "timeout after %0d cycles: commits=%0d target=%0d",
-                timeout_cycles, commit_count, target_commits))
+                timeout_cycles, retire_count, target_commits))
         end
 
         uvm_event_pool::get_global("test_done").trigger();

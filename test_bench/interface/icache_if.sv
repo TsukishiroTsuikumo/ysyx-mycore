@@ -1,7 +1,7 @@
 interface icache_if (
   input bit clk
 );
-  logic         rst;
+  logic         reset;
   logic         req_valid;
   logic         req_ready;
   logic [31:0]  req_addr;

@@ -24,7 +24,8 @@ class mycore_scoreboard extends uvm_scoreboard;
 
     virtual function void write_commit(probe_item item);
         if (item != null) begin
-            commit_count++;
+            if (item.retire) instr_count++;
+            if (item.commit) commit_count++;
         end
     endfunction
 

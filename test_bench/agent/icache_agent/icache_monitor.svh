@@ -21,7 +21,7 @@ class icache_monitor extends uvm_monitor;
 
         forever begin
             @(posedge vif.clk);
-            if (vif.rst) begin
+            if (vif.reset) begin
                 continue;
             end
 

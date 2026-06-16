@@ -28,7 +28,7 @@ class dcache_driver extends uvm_driver #(dcache_item);
             seq_item_port.get_next_item(item);
 
             @(posedge vif.clk);
-            while (vif.rst) begin
+            while (vif.reset) begin
                 @(posedge vif.clk);
             end
 

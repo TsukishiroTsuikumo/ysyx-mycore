@@ -28,13 +28,13 @@ class cache_base_test extends uvm_test;
     endfunction
 
     virtual task reset_and_init();
-        ic_vif.rst <= 1'b1;
-        dc_vif.rst <= 1'b1;
+        ic_vif.reset <= 1'b1;
+        dc_vif.reset <= 1'b1;
         probe_vif.reset <= 1'b1;
         repeat (5) @(posedge ic_vif.clk);
         @(negedge ic_vif.clk);
-        ic_vif.rst <= 1'b0;
-        dc_vif.rst <= 1'b0;
+        ic_vif.reset <= 1'b0;
+        dc_vif.reset <= 1'b0;
         probe_vif.reset <= 1'b0;
         repeat (2) @(posedge ic_vif.clk);
     endtask

@@ -5,7 +5,7 @@ module Dcache #(
     parameter DM_LINE_WIDTH = DM_LINE_BYTES * 8
 )(
     input                           clk,
-    input                           rst,
+    input                           reset,
 
     // CPU data memory interface
     input                    [31:0] dm_req_addr_in,
@@ -192,7 +192,7 @@ module Dcache #(
                 .LINE_WIDTH(DM_LINE_WIDTH)
             ) set_inst (
                 .clk( clk ),
-                .reset( rst ),
+                .reset( reset ),
                 .set_tag( active_tag ),
 
                 .rd_req_in( set_rd_req[set_idx] ),
@@ -216,8 +216,8 @@ module Dcache #(
         end
     endgenerate
 
-    always @(posedge clk or posedge rst) begin
-        if (rst) begin
+    always @(posedge clk or posedge reset) begin
+        if (reset) begin
             current_state <= IDLE;
         end
         else begin
@@ -324,8 +324,8 @@ module Dcache #(
         endcase
     end
 
-    always @(posedge clk or posedge rst) begin
-        if (rst) begin
+    always @(posedge clk or posedge reset) begin
+        if (reset) begin
             req_addr_q <= 32'b0;
             req_tag_q <= {TAG_WIDTH{1'b0}};
             req_offset_q <= {OFFSET_WIDTH{1'b0}};

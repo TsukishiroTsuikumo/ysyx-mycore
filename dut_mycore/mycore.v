@@ -62,7 +62,7 @@ module mycore (
     .pcr(current_pc_if)
   );
 
-  instr_queue instr_queue_inst(
+  instr_queue #(8) instr_queue_inst(
     .clk(clk),
     .reset(reset),
     .pm_req_valid(pm_req_valid_out),
@@ -195,6 +195,7 @@ module mycore (
   reg         is_jal_id_ex;
   reg         is_jalr_id_ex;
   reg  [31:0] PC_id_ex;
+  reg  [31:0] instr_id_ex;
   reg         valid_id_ex;
 
   always @(posedge clk or posedge reset) begin
@@ -216,6 +217,7 @@ module mycore (
       is_jal_id_ex <= 1'b0;
       is_jalr_id_ex <= 1'b0;
       PC_id_ex <= 32'b0;
+      instr_id_ex <= 32'b0;
       valid_id_ex <= 1'b0;
     end
     else if(hzd_stall[1]) begin
@@ -236,6 +238,7 @@ module mycore (
       is_jal_id_ex <= is_jal_id_ex;
       is_jalr_id_ex <= is_jalr_id_ex;
       PC_id_ex <= PC_id_ex;
+      instr_id_ex <= instr_id_ex;
       valid_id_ex <= valid_id_ex;
     end
     else begin
@@ -256,6 +259,7 @@ module mycore (
       is_jal_id_ex        <= is_jal_id;
       is_jalr_id_ex       <= is_jalr_id;
       PC_id_ex            <= PC_id;
+      instr_id_ex         <= instr_id;
       valid_id_ex         <= instr_valid && valid[0];
     end
   end
@@ -356,6 +360,8 @@ module mycore (
   reg  [3:0] dm_st_ex_mem;
   reg  [2:0] lsu_op_ex_mem;
   reg        valid_ex_mem;
+  reg [31:0] PC_ex_mem;
+  reg [31:0] instr_ex_mem;
 
   always @(posedge clk or posedge reset) begin
     if(reset) begin
@@ -367,6 +373,8 @@ module mycore (
       dm_st_ex_mem <= 4'b0;
       lsu_op_ex_mem <= 3'b0;
       valid_ex_mem <= 1'b0;
+      instr_ex_mem <= 32'b0;
+      PC_ex_mem <= 32'b0;
     end
     else if(flush_sig[3]) begin // flush
       w1_addr_ex_mem <= 5'b0;
@@ -377,6 +385,8 @@ module mycore (
       dm_st_ex_mem <= 4'b0;
       lsu_op_ex_mem <= 3'b0;
       valid_ex_mem <= 1'b0;
+      PC_ex_mem <= 32'b0;
+      instr_ex_mem <= 32'b0;
     end
     else if(hzd_stall[2]) begin
       w1_addr_ex_mem <= w1_addr_ex_mem;
@@ -387,6 +397,8 @@ module mycore (
       dm_st_ex_mem <= dm_st_ex_mem;
       lsu_op_ex_mem <= lsu_op_ex_mem;
       valid_ex_mem <= valid_ex_mem;
+      PC_ex_mem <= PC_ex_mem;
+      instr_ex_mem <= instr_ex_mem;
     end
     else begin
       case (jal_sig)
@@ -411,6 +423,8 @@ module mycore (
       dm_st_ex_mem   <= dm_st_ex;
       lsu_op_ex_mem  <= lsu_op_id_ex;
       valid_ex_mem   <= valid_id_ex & valid[1];
+      instr_ex_mem   <= instr_id_ex;
+      PC_ex_mem      <= PC_id_ex;
     end
   end
 
@@ -436,6 +450,8 @@ module mycore (
   reg         dm_req_rready_mem_wb;
   reg         dm_req_wready_mem_wb;
   reg         valid_mem_wb;
+  reg [31:0] instr_mem_wb;
+  reg [31:0] PC_mem_wb;
 
   always @(posedge clk or posedge reset) begin
     if(reset | flush_sig[4]) begin
@@ -447,6 +463,8 @@ module mycore (
       valid_mem_wb <= 1'b0;
       dm_req_rready_mem_wb <= 1'b0;
       dm_req_wready_mem_wb <= 1'b0;
+      instr_mem_wb <= 32'b0;
+      PC_mem_wb <= 32'b0;
     end
     else if(hzd_stall[3]) begin
       pipe_mem_wb <= pipe_mem_wb;
@@ -457,6 +475,8 @@ module mycore (
       dm_req_rready_mem_wb <= dm_req_rready_mem_wb;
       dm_req_wready_mem_wb <= dm_req_wready_mem_wb;
       valid_mem_wb <= valid_mem_wb;
+      instr_mem_wb <= instr_mem_wb;
+      PC_mem_wb <= PC_mem_wb;
     end
     else begin
       pipe_mem_wb <= pipe_ex_mem;
@@ -467,6 +487,8 @@ module mycore (
       dm_req_rready_mem_wb <= dm_req_rready_in && dm_req_rvalid_out;
       dm_req_wready_mem_wb <= dm_req_wready_in && dm_req_wvalid_out;
       valid_mem_wb <= valid_ex_mem & valid[2];
+      instr_mem_wb <= instr_ex_mem;
+      PC_mem_wb <= PC_ex_mem;
     end
   end
 
@@ -489,5 +511,6 @@ module mycore (
   wire  [4:0] w1_addr_wb = w1_addr_mem_wb;
   wire [31:0] w1_in_wb = is_ld_wb ? dm_rd_wb : pipe_mem_wb;
   wire        commit_valid = w1_en_mem_wb && (!is_ld_wb || dm_resp_rvalid_in) && valid_mem_wb && valid[3];
+  wire        retire_valid = valid_mem_wb && valid[3];
 
 endmodule

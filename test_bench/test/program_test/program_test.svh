@@ -29,8 +29,13 @@ class program_test extends program_base_test;
         pg_seq.image = image;
         pg_seq.start(null);
 
+        if (!cmodel_init_empty()) begin
+            `uvm_fatal("PROGRAM_TEST", "C model failed to initialize")
+        end
+
         foreach (image.PM[word_addr]) begin
             $root.test_bench.dut.u_mem.write_word(word_addr << 2, image.PM[word_addr]);
+            cmodel_mem_write32(word_addr << 2, image.PM[word_addr]);
         end
 
         `uvm_info("PROGRAM_TEST", $sformatf(

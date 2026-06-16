@@ -2,6 +2,11 @@ class program_scoreboard extends mycore_scoreboard;
     `uvm_component_utils(program_scoreboard)
 
     typedef struct packed {
+        bit [31:0] pc;
+        bit [31:0] instr;
+    } retire_t;
+
+    typedef struct packed {
         bit [4:0]  rd;
         bit [31:0] value;
         bit [31:0] instr;
@@ -15,17 +20,14 @@ class program_scoreboard extends mycore_scoreboard;
         bit [3:0]  wstrb;
         bit [31:0] data;
         bit [31:0] wdata;
+        bit [31:0] instr;
+        bit [31:0] pc;
     } dmem_trace_t;
 
-    virtual probe_if probe_vif;
-    program_image image;
-
-    bit [31:0] instr_q[$];
-    dmem_trace_t dmem_q[$];
-    reg_write_t exp_q[$];
-    reg_write_t act_q[$];
-    bit [31:0] exp_regs[0:31];
-    bit        regs_loaded;
+    retire_t     act_retire_q[$];
+    reg_write_t  act_q[$];
+    reg_write_t  exp_q[$];
+    dmem_trace_t act_dmem_q[$];
 
     int unsigned pass_count;
     int unsigned fail_count;
@@ -37,189 +39,10 @@ class program_scoreboard extends mycore_scoreboard;
         super.new(name, parent);
     endfunction
 
-    virtual function void build_phase(uvm_phase phase);
-        super.build_phase(phase);
-        if (!uvm_config_db#(virtual probe_if)::get(this, "", "probe", probe_vif)) begin
-            `uvm_fatal("PROGRAM_SCOREBOARD", "Failed to get probe interface")
-        end
-        void'(uvm_config_db#(program_image)::get(this, "", "image", image));
-    endfunction
-
-    function void load_initial_regs();
-        foreach (exp_regs[i]) begin
-            exp_regs[i] = probe_vif.init_reg_value[i];
-        end
-        exp_regs[0] = 32'b0;
-        regs_loaded = 1'b1;
-    endfunction
-
-    function automatic bit [31:0] sext(input bit [31:0] value, input int unsigned width);
-        bit [31:0] mask;
-        begin
-            if (width >= 32) begin
-                return value;
-            end
-            mask = (32'h0000_0001 << width) - 1;
-            if (value[width - 1]) begin
-                return value | ~mask;
-            end
-            return value & mask;
-        end
-    endfunction
-
-    function automatic bit [31:0] calc_r_type(input bit [31:0] instr);
-        bit [6:0] funct7;
-        bit [2:0] funct3;
-        bit [4:0] rs1;
-        bit [4:0] rs2;
-        bit [31:0] rs1_val;
-        bit [31:0] rs2_val;
-        bit [4:0] shamt;
-        bit signed [32:0] rs1_sx;
-        bit signed [32:0] rs2_sx;
-        bit signed [32:0] rs2_ux;
-        bit signed [65:0] prod_ss;
-        bit signed [65:0] prod_su;
-        bit [63:0] prod_uu;
-
-        funct7 = instr[31:25];
-        rs2 = instr[24:20];
-        rs1 = instr[19:15];
-        funct3 = instr[14:12];
-        rs1_val = exp_regs[rs1];
-        rs2_val = exp_regs[rs2];
-        shamt = rs2_val[4:0];
-
-        rs1_sx = {rs1_val[31], rs1_val};
-        rs2_sx = {rs2_val[31], rs2_val};
-        rs2_ux = {1'b0, rs2_val};
-        prod_ss = rs1_sx * rs2_sx;
-        prod_su = rs1_sx * rs2_ux;
-        prod_uu = rs1_val * rs2_val;
-
-        case (funct7)
-            7'b0000000: begin
-                case (funct3)
-                    3'b000: return rs1_val + rs2_val;
-                    3'b001: return rs1_val << shamt;
-                    3'b010: return ($signed(rs1_val) < $signed(rs2_val)) ? 32'd1 : 32'd0;
-                    3'b011: return (rs1_val < rs2_val) ? 32'd1 : 32'd0;
-                    3'b100: return rs1_val ^ rs2_val;
-                    3'b101: return rs1_val >> shamt;
-                    3'b110: return rs1_val | rs2_val;
-                    3'b111: return rs1_val & rs2_val;
-                    default: return 32'b0;
-                endcase
-            end
-            7'b0100000: begin
-                case (funct3)
-                    3'b000: return rs1_val - rs2_val;
-                    3'b101: return $signed(rs1_val) >>> shamt;
-                    default: return 32'b0;
-                endcase
-            end
-            7'b0000001: begin
-                case (funct3)
-                    3'b000: return rs1_val * rs2_val;
-                    3'b001: return prod_ss[63:32];
-                    3'b010: return prod_su[63:32];
-                    3'b011: return prod_uu[63:32];
-                    3'b100: begin
-                        if (rs2_val == 0) return 32'hffff_ffff;
-                        if ((rs1_val == 32'h8000_0000) && (rs2_val == 32'hffff_ffff)) return 32'h8000_0000;
-                        return $signed(rs1_val) / $signed(rs2_val);
-                    end
-                    3'b101: return (rs2_val == 0) ? 32'hffff_ffff : (rs1_val / rs2_val);
-                    3'b110: begin
-                        if (rs2_val == 0) return rs1_val;
-                        if ((rs1_val == 32'h8000_0000) && (rs2_val == 32'hffff_ffff)) return 32'b0;
-                        return $signed(rs1_val) % $signed(rs2_val);
-                    end
-                    3'b111: return (rs2_val == 0) ? rs1_val : (rs1_val % rs2_val);
-                    default: return 32'b0;
-                endcase
-            end
-            default: return 32'b0;
-        endcase
-    endfunction
-
-    function automatic bit [31:0] calc_i_type(input bit [31:0] instr);
-        bit [2:0] funct3;
-        bit [6:0] funct7;
-        bit [4:0] rs1;
-        bit [31:0] rs1_val;
-        bit [31:0] imm;
-
-        funct7 = instr[31:25];
-        funct3 = instr[14:12];
-        rs1 = instr[19:15];
-        rs1_val = exp_regs[rs1];
-        imm = sext({20'b0, instr[31:20]}, 12);
-
-        case (funct3)
-            3'b000: return rs1_val + imm;
-            3'b001: return rs1_val << instr[24:20];
-            3'b010: return ($signed(rs1_val) < $signed(imm)) ? 32'd1 : 32'd0;
-            3'b011: return (rs1_val < imm) ? 32'd1 : 32'd0;
-            3'b100: return rs1_val ^ imm;
-            3'b101: begin
-                if (funct7 == 7'b0100000) return $signed(rs1_val) >>> instr[24:20];
-                return rs1_val >> instr[24:20];
-            end
-            3'b110: return rs1_val | imm;
-            3'b111: return rs1_val & imm;
-            default: return 32'b0;
-        endcase
-    endfunction
-
-    function automatic bit branch_taken(input bit [31:0] instr);
-        bit [2:0] funct3;
-        bit [4:0] rs1;
-        bit [4:0] rs2;
-        bit [31:0] rs1_val;
-        bit [31:0] rs2_val;
-
-        funct3 = instr[14:12];
-        rs1 = instr[19:15];
-        rs2 = instr[24:20];
-        rs1_val = exp_regs[rs1];
-        rs2_val = exp_regs[rs2];
-
-        case (funct3)
-            3'b000: return (rs1_val == rs2_val);
-            3'b001: return (rs1_val != rs2_val);
-            3'b100: return ($signed(rs1_val) < $signed(rs2_val));
-            3'b101: return ($signed(rs1_val) >= $signed(rs2_val));
-            3'b110: return (rs1_val < rs2_val);
-            3'b111: return (rs1_val >= rs2_val);
-            default: return 1'b0;
-        endcase
-    endfunction
-
-    function automatic bit [31:0] load_value(input bit [31:0] instr, input bit [31:0] raw_data);
-        case (instr[14:12])
-            3'b000: return {{24{raw_data[7]}}, raw_data[7:0]};
-            3'b001: return {{16{raw_data[15]}}, raw_data[15:0]};
-            3'b010: return raw_data;
-            3'b100: return {24'b0, raw_data[7:0]};
-            3'b101: return {16'b0, raw_data[15:0]};
-            default: return 32'b0;
-        endcase
-    endfunction
-
-    function automatic bit [3:0] store_wstrb(input bit [31:0] instr);
-        case (instr[14:12])
-            3'b000: return 4'b0001;
-            3'b001: return 4'b0011;
-            3'b010: return 4'b1111;
-            default: return 4'b0000;
-        endcase
-    endfunction
-
-    function void push_expected(
+    function void push_expected_commit(
         input bit [31:0] instr,
         input bit [31:0] pc,
-        input bit [4:0] rd,
+        input bit [4:0]  rd,
         input bit [31:0] value
     );
         reg_write_t exp;
@@ -229,203 +52,167 @@ class program_scoreboard extends mycore_scoreboard;
         exp.instr = instr;
         exp.pc = pc;
         exp_q.push_back(exp);
-        if (rd != 5'd0) begin
-            exp_regs[rd] = exp.value;
-        end
     endfunction
 
-    function void check_dmem_read(input bit [31:0] instr, input bit [31:0] addr, output bit [31:0] raw_data);
-        dmem_trace_t trace;
-
-        raw_data = 32'b0;
-        if (dmem_q.size() == 0) begin
-            fail_count++;
-            `uvm_error("PROGRAM_SCORE", $sformatf(
-                "missing dmem read instr=0x%08x addr=0x%08x", instr, addr))
-            return;
-        end
-
-        trace = dmem_q.pop_front();
-        if (!trace.is_read) begin
-            fail_count++;
-            `uvm_error("PROGRAM_SCORE", $sformatf(
-                "expected dmem read but saw write instr=0x%08x addr=0x%08x",
-                instr, addr))
-        end
-        else if (trace.addr !== addr) begin
-            fail_count++;
-            `uvm_error("PROGRAM_SCORE", $sformatf(
-                "dmem read addr mismatch instr=0x%08x exp=0x%08x act=0x%08x",
-                instr, addr, trace.addr))
-        end
-        else begin
-            dmem_check_count++;
-        end
-        raw_data = trace.data;
-    endfunction
-
-    function void check_dmem_write(
+    function void check_expected_dmem(
         input bit [31:0] instr,
+        input bit [31:0] pc,
+        input bit        is_read,
+        input bit        is_write,
         input bit [31:0] addr,
-        input bit [3:0] wstrb,
-        input bit [31:0] wdata
+        input bit [3:0]  wstrb,
+        input bit [31:0] wdata,
+        input bit [31:0] rdata
     );
-        dmem_trace_t trace;
+        dmem_trace_t act;
 
-        if (dmem_q.size() == 0) begin
+        if (act_dmem_q.size() == 0) begin
             fail_count++;
             `uvm_error("PROGRAM_SCORE", $sformatf(
-                "missing dmem write instr=0x%08x addr=0x%08x wstrb=0x%0x wdata=0x%08x",
-                instr, addr, wstrb, wdata))
+                "missing DUT dmem access pc=0x%08x instr=0x%08x exp_read=%0d exp_write=%0d exp_addr=0x%08x",
+                pc, instr, is_read, is_write, addr))
             return;
         end
 
-        trace = dmem_q.pop_front();
-        if (!trace.is_write) begin
+        act = act_dmem_q.pop_front();
+        if ((act.is_read !== is_read) || (act.is_write !== is_write) ||
+            (act.addr !== addr)) begin
             fail_count++;
             `uvm_error("PROGRAM_SCORE", $sformatf(
-                "expected dmem write but saw read instr=0x%08x addr=0x%08x",
-                instr, addr))
+                "dmem access mismatch pc=0x%08x instr=0x%08x exp_read=%0d act_read=%0d exp_write=%0d act_write=%0d exp_addr=0x%08x act_addr=0x%08x",
+                pc, instr, is_read, act.is_read, is_write, act.is_write, addr, act.addr))
+            return;
         end
-        else if ((trace.addr !== addr) || (trace.wstrb !== wstrb) || (trace.wdata !== wdata)) begin
+
+        if (is_write && ((act.wstrb !== wstrb) || (act.wdata !== wdata))) begin
             fail_count++;
             `uvm_error("PROGRAM_SCORE", $sformatf(
-                "dmem write mismatch instr=0x%08x exp_addr=0x%08x act_addr=0x%08x exp_wstrb=0x%0x act_wstrb=0x%0x exp_wdata=0x%08x act_wdata=0x%08x",
-                instr, addr, trace.addr, wstrb, trace.wstrb, wdata, trace.wdata))
+                "dmem write mismatch pc=0x%08x instr=0x%08x exp_addr=0x%08x act_addr=0x%08x exp_wstrb=0x%0x act_wstrb=0x%0x exp_wdata=0x%08x act_wdata=0x%08x",
+                pc, instr, addr, act.addr, wstrb, act.wstrb, wdata, act.wdata))
+            return;
         end
-        else begin
-            dmem_check_count++;
+
+        if (is_read && (act.data !== rdata)) begin
+            fail_count++;
+            `uvm_error("PROGRAM_SCORE", $sformatf(
+                "dmem read data mismatch pc=0x%08x instr=0x%08x addr=0x%08x exp=0x%08x act=0x%08x",
+                pc, instr, addr, rdata, act.data))
+            return;
         end
+
+        dmem_check_count++;
     endfunction
 
-    function void execute_instr(input bit [31:0] instr, inout bit [31:0] pc);
-        bit [6:0] opcode;
-        bit [4:0] rd;
-        bit [4:0] rs1;
-        bit [4:0] rs2;
-        bit [31:0] imm;
-        bit [31:0] addr;
-        bit [31:0] raw_data;
+    function void build_expected_queue_from_cmodel();
+        int unsigned ok;
+        int unsigned retire;
+        int unsigned commit;
+        int unsigned pc;
+        int unsigned instr;
+        int unsigned rd;
+        int unsigned rd_value;
+        int unsigned dmem_valid;
+        int unsigned dmem_is_read;
+        int unsigned dmem_is_write;
+        int unsigned dmem_addr;
+        int unsigned dmem_wstrb;
+        int unsigned dmem_wdata;
+        int unsigned dmem_rdata;
+        retire_t act_retire;
 
-        opcode = instr[6:0];
-        rd = instr[11:7];
-        rs1 = instr[19:15];
-        rs2 = instr[24:20];
+        while (act_retire_q.size() != 0) begin
+            act_retire = act_retire_q.pop_front();
+            ok = cmodel_step(
+                retire,
+                commit,
+                pc,
+                instr,
+                rd,
+                rd_value,
+                dmem_valid,
+                dmem_is_read,
+                dmem_is_write,
+                dmem_addr,
+                dmem_wstrb,
+                dmem_wdata,
+                dmem_rdata
+            );
 
-        case (opcode)
-            7'b0110011: begin
-                push_expected(instr, pc, rd, calc_r_type(instr));
-                pc = pc + 4;
+            if (!ok || !retire) begin
+                fail_count++;
+                `uvm_error("PROGRAM_SCORE", $sformatf(
+                    "C model failed to retire for DUT pc=0x%08x instr=0x%08x",
+                    act_retire.pc, act_retire.instr))
+                return;
             end
 
-            7'b0010011: begin
-                push_expected(instr, pc, rd, calc_i_type(instr));
-                pc = pc + 4;
+            if ((pc !== act_retire.pc) || (instr !== act_retire.instr)) begin
+                fail_count++;
+                `uvm_error("PROGRAM_SCORE", $sformatf(
+                    "retire mismatch exp_pc=0x%08x act_pc=0x%08x exp_instr=0x%08x act_instr=0x%08x",
+                    pc, act_retire.pc, instr, act_retire.instr))
             end
 
-            7'b0000011: begin
-                imm = sext({20'b0, instr[31:20]}, 12);
-                addr = exp_regs[rs1] + imm;
-                check_dmem_read(instr, addr, raw_data);
-                push_expected(instr, pc, rd, load_value(instr, raw_data));
-                pc = pc + 4;
+            if (dmem_valid) begin
+                check_expected_dmem(
+                    instr,
+                    pc,
+                    dmem_is_read[0],
+                    dmem_is_write[0],
+                    dmem_addr,
+                    dmem_wstrb[3:0],
+                    dmem_wdata,
+                    dmem_rdata
+                );
             end
 
-            7'b0100011: begin
-                imm = sext({20'b0, instr[31:25], instr[11:7]}, 12);
-                addr = exp_regs[rs1] + imm;
-                check_dmem_write(instr, addr, store_wstrb(instr), exp_regs[rs2]);
-                pc = pc + 4;
+            if (commit) begin
+                push_expected_commit(instr, pc, rd[4:0], rd_value);
             end
-
-            7'b1100011: begin
-                imm = {{20{instr[31]}}, instr[7], instr[30:25], instr[11:8], 1'b0};
-                pc = branch_taken(instr) ? (pc + imm) : (pc + 4);
-            end
-
-            7'b1101111: begin
-                imm = {{12{instr[31]}}, instr[19:12], instr[20], instr[30:21], 1'b0};
-                push_expected(instr, pc, rd, pc + 4);
-                pc = pc + imm;
-            end
-
-            7'b1100111: begin
-                imm = sext({20'b0, instr[31:20]}, 12);
-                push_expected(instr, pc, rd, pc + 4);
-                pc = (exp_regs[rs1] + imm) & ~32'h0000_0001;
-            end
-
-            7'b0110111: begin
-                push_expected(instr, pc, rd, {instr[31:12], 12'b0});
-                pc = pc + 4;
-            end
-
-            7'b0010111: begin
-                push_expected(instr, pc, rd, pc + {instr[31:12], 12'b0});
-                pc = pc + 4;
-            end
-
-            default: begin
-                pc = pc + 4;
-            end
-        endcase
-
-        exp_regs[0] = 32'b0;
-    endfunction
-
-    function void build_expected_queue();
-        bit [31:0] ref_pc;
-        bit [31:0] instr;
-
-        if (!regs_loaded) begin
-            load_initial_regs();
-        end
-
-        if ((instr_q.size() == 0) && (image != null)) begin
-            foreach (image.linear_instr_q[i]) begin
-                instr_q.push_back(image.linear_instr_q[i]);
-            end
-        end
-
-        ref_pc = 32'b0;
-        while ((instr_q.size() != 0) && (exp_q.size() < act_q.size())) begin
-            instr = instr_q.pop_front();
-            execute_instr(instr, ref_pc);
         end
     endfunction
 
     virtual function void write_instr(instr_item item);
         super.write_instr(item);
-        if (item == null) return;
-        instr_q.push_back(item.instr);
     endfunction
 
     virtual function void write_commit(probe_item item);
+        retire_t act_retire;
         reg_write_t act;
 
         super.write_commit(item);
         if (item == null) return;
 
-        act.rd = item.rd_addr;
-        act.value = item.rd_value;
-        act.instr = 32'b0;
-        act.pc = item.pc;
-        act_q.push_back(act);
+        if (item.retire) begin
+            act_retire.pc = item.pc;
+            act_retire.instr = item.instr;
+            act_retire_q.push_back(act_retire);
+        end
+
+        if (item.commit) begin
+            act.rd = item.rd_addr;
+            act.value = item.rd_value;
+            act.instr = item.instr;
+            act.pc = item.pc;
+            act_q.push_back(act);
+        end
     endfunction
 
     virtual function void write_dmem(fetch_data_item item);
-        dmem_trace_t trace;
+        dmem_trace_t act;
 
         super.write_dmem(item);
         if (item == null) return;
 
-        trace.is_read = item.is_read;
-        trace.is_write = item.is_write;
-        trace.addr = item.addr;
-        trace.wstrb = item.wstrb;
-        trace.data = item.data;
-        trace.wdata = item.wdata;
-        dmem_q.push_back(trace);
+        act.is_read = item.is_read;
+        act.is_write = item.is_write;
+        act.addr = item.addr;
+        act.wstrb = item.wstrb;
+        act.data = item.data;
+        act.wdata = item.wdata;
+        act.instr = 32'b0;
+        act.pc = 32'b0;
+        act_dmem_q.push_back(act);
     endfunction
 
     virtual function void check_phase(uvm_phase phase);
@@ -433,7 +220,7 @@ class program_scoreboard extends mycore_scoreboard;
         reg_write_t act;
 
         super.check_phase(phase);
-        build_expected_queue();
+        build_expected_queue_from_cmodel();
 
         while ((exp_q.size() != 0) && (act_q.size() != 0)) begin
             exp = exp_q.pop_front();
@@ -460,6 +247,7 @@ class program_scoreboard extends mycore_scoreboard;
 
         while (exp_q.size() != 0) begin
             exp = exp_q.pop_front();
+            fail_count++;
             `uvm_error("PROGRAM_SCORE", $sformatf(
                 "missing commit pc=0x%08x instr=0x%08x rd=x%0d exp=0x%08x",
                 exp.pc, exp.instr, exp.rd, exp.value))
@@ -467,16 +255,18 @@ class program_scoreboard extends mycore_scoreboard;
 
         while (act_q.size() != 0) begin
             act = act_q.pop_front();
+            fail_count++;
             `uvm_error("PROGRAM_SCORE", $sformatf(
                 "unexpected commit rd=x%0d value=0x%08x probe_pc=0x%08x",
                 act.rd, act.value, act.pc))
         end
 
-        while (dmem_q.size() != 0) begin
+        while (act_dmem_q.size() != 0) begin
             dmem_trace_t trace;
-            trace = dmem_q.pop_front();
+            trace = act_dmem_q.pop_front();
+            fail_count++;
             `uvm_error("PROGRAM_SCORE", $sformatf(
-                "unexpected dmem access is_read=%0d is_write=%0d addr=0x%08x",
+                "unexpected DUT dmem access is_read=%0d is_write=%0d addr=0x%08x",
                 trace.is_read, trace.is_write, trace.addr))
         end
     endfunction

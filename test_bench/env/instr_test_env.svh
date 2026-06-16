@@ -22,7 +22,6 @@ class instr_test_env extends uvm_env;
 
     virtual function void connect_phase(uvm_phase phase);
         super.connect_phase(phase);
-        if_agent.monitor.analysis_port.connect(scoreboard.instr_imp);
         data_agent.monitor.analysis_port.connect(scoreboard.dmem_ap);
         cm_agent.monitor.analysis_port.connect(scoreboard.commit_imp);
     endfunction

@@ -11,4 +11,8 @@ class jp_link_test extends instr_base_test;
         super.build_phase(phase);
     endfunction
 
+    virtual function int unsigned get_default_target_commits();
+        return (`TEST_TIMES / 4);
+    endfunction
+
 endclass

@@ -72,14 +72,16 @@ class st_scoreboard extends mycore_scoreboard;
         return exp;
     endfunction
 
-    virtual function void write_instr(instr_item item);
-        super.write_instr(item);
-        if (item != null) instr_q.push_back(item.instr);
-    endfunction
-
     virtual function void write_dmem(fetch_data_item item);
         super.write_dmem(item);
         if (item != null) act_q.push_back(item);
+    endfunction
+
+    virtual function void write_commit(probe_item item);
+        super.write_commit(item);
+        if ((item != null) && item.retire) begin
+            instr_q.push_back(item.instr);
+        end
     endfunction
 
     virtual function void check_phase(uvm_phase phase);

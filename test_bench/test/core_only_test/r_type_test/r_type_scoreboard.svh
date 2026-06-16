@@ -110,8 +110,7 @@ class r_type_scoreboard extends mycore_scoreboard;
         return result;
     endfunction
 
-    virtual function void write_instr(instr_item item);
-        bit [31:0] instr;
+    function void push_expected(input bit [31:0] instr);
         bit [6:0]  opcode;
         bit [6:0]  funct7;
         bit [2:0]  funct3;
@@ -120,11 +119,8 @@ class r_type_scoreboard extends mycore_scoreboard;
         bit [4:0]  rd;
         reg_write_t exp;
 
-        super.write_instr(item);
-        if (item == null) return;
         if (!regs_loaded) load_initial_regs();
 
-        instr = item.instr;
         opcode = instr[6:0];
         if (opcode != 7'b0110011) return;
 
@@ -149,10 +145,16 @@ class r_type_scoreboard extends mycore_scoreboard;
         super.write_commit(item);
         if (item == null) return;
 
-        act.rd = item.rd_addr;
-        act.value = item.rd_value;
-        act.instr = 32'b0;
-        act_q.push_back(act);
+        if (item.retire) begin
+            push_expected(item.instr);
+        end
+
+        if (item.commit) begin
+            act.rd = item.rd_addr;
+            act.value = item.rd_value;
+            act.instr = item.instr;
+            act_q.push_back(act);
+        end
     endfunction
 
     virtual function void check_phase(uvm_phase phase);

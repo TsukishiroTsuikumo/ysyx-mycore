@@ -20,7 +20,7 @@ class fetch_instr_monitor extends uvm_monitor;
         instr_item item;
         forever begin
             @(posedge vif.clk);
-            if(vif.rst) begin
+            if(vif.reset) begin
                 continue;
             end
             if(vif.resp_valid) begin

@@ -1,7 +1,7 @@
 interface dcache_if (
   input bit clk
 );
-    logic           rst;
+    logic           reset;
     logic   [31:0]  req_addr;
 
     logic           req_rvalid;

@@ -4,6 +4,7 @@
 int main() {
     std::cout << "Starting simulation..." << std::endl;
     mycore core;
+    core.load_image();
     for (int i = 0; i < 4000; i++) {
         core.step();
     }

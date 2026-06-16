@@ -2,7 +2,7 @@ module mem_DM #(
     parameter DM_addr_width = 14 // 16KB memory (2^14 bytes)
 )(
     input              clk_dm,
-    input              rst_dm,
+    input              reset_dm,
 
     input       [31:0] dm_addr_in,
     input       [31:0] dm_wr_in,
@@ -55,9 +55,9 @@ module mem_DM #(
     end
 
     // Sequential logic to write data to DM on store signals
-    always @(posedge clk_dm or posedge rst_dm) begin  
+    always @(posedge clk_dm or posedge reset_dm) begin  
         integer i;
-        if(rst_dm) begin
+        if(reset_dm) begin
             for(i=0;i<DM_size;i++)
                 DM[i] = 0;
             $readmemh(dmfile, DM);

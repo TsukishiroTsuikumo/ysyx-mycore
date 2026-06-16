@@ -19,18 +19,16 @@ class jp_link_scoreboard extends mycore_scoreboard;
         super.new(name, parent);
     endfunction
 
-    virtual function void write_instr(instr_item item);
-        super.write_instr(item);
-    endfunction
-
     virtual function void write_commit(probe_item item);
         reg_write_t act;
         super.write_commit(item);
         if (item == null) return;
-        act.rd = item.rd_addr;
-        act.value = item.rd_value;
-        act.instr = 32'b0;
-        act_q.push_back(act);
+        if (item.commit) begin
+            act.rd = item.rd_addr;
+            act.value = item.rd_value;
+            act.instr = item.instr;
+            act_q.push_back(act);
+        end
     endfunction
 
     virtual function void check_phase(uvm_phase phase);

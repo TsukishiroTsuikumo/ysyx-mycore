@@ -14,12 +14,11 @@ class memory {
     
     public:
 
-        explicit memory() {
-            load_image();
-        }
+        memory() = default;
 
         void load_image();
         void load_image(const std::string& filename);
+        void clear();
 
         void write8(uint32_t addr, uint32_t data);
         void write16(uint32_t addr, uint32_t data);
@@ -28,6 +27,7 @@ class memory {
         uint8_t read8(uint32_t addr) const;
         uint16_t read16(uint32_t addr) const;
         uint32_t read32(uint32_t addr) const;
+        bool has_word(uint32_t addr) const;
 
     private:
         std::map<uint32_t, uint8_t> mem;

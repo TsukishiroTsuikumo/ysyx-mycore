@@ -1,5 +1,5 @@
 module MEM #(
-    parameter MEM_WIDTH = 20, // 1MB memory (2^20 bytes)
+    parameter MEM_WIDTH = 24, // 16MB memory (2^24 bytes)
     parameter MEM_BYTES = (1 << MEM_WIDTH),
     parameter LINE_WIDTH = 4, // 2 ^4 = 16 bytes per line
     parameter LINE_BYTES = (1 << LINE_WIDTH),

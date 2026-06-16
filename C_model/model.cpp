@@ -1,5 +1,6 @@
 #include "model.hpp"
 #include <cstdint>
+#include <iostream>
 
 namespace {
 
@@ -22,9 +23,43 @@ inline uint32_t rem_signed(uint32_t lhs, uint32_t rhs) {
 
 } // namespace
 
-void mycore::step() {
-    const uint32_t instr = mem_.read32(state_.pc);
+void mycore::reset() {
+    state_ = mycore_state{};
+    mem_.clear();
+}
+
+void mycore::load_image() {
+    mem_.load_image();
+}
+
+void mycore::load_image(const std::string& filename) {
+    mem_.load_image(filename);
+}
+
+void mycore::mem_write32(uint32_t addr, uint32_t data) {
+    mem_.write32(addr, data);
+}
+
+void mycore::set_pc(uint32_t pc) {
+    state_.pc = pc;
+}
+
+void mycore::set_reg(uint32_t idx, uint32_t value) {
+    if (idx < state_.regs.size()) {
+        state_.regs[idx] = (idx == 0) ? 0 : value;
+    }
+}
+
+mycore_retire_trace mycore::step() {
+    static int step_count = 0;
+    const bool has = mem_.has_word(state_.pc);
+    const uint32_t instr = has ? mem_.read32(state_.pc) : 0x00000013u;
     const uint32_t pc = state_.pc;
+
+    if (step_count < 5 || (pc >= 0x130 && pc <= 0x140))
+        std::cout << "CMODEL step[" << step_count << "]: pc=0x" << std::hex << pc
+                  << " has=" << has << " instr=0x" << instr << std::dec << std::endl;
+    step_count++;
     const uint32_t opcode = instr & 0x7f;
     const uint32_t rd = (instr >> 7) & 0x1f;
     const uint32_t funct3 = (instr >> 12) & 0x7;
@@ -37,6 +72,11 @@ void mycore::step() {
     uint32_t next_pc = pc + 4;
     uint32_t result = 0;
     bool write_rd = false;
+    mycore_retire_trace trace;
+
+    trace.retire = true;
+    trace.pc = pc;
+    trace.instr = instr;
 
     switch (opcode) {
     case 0x33: {
@@ -147,25 +187,31 @@ void mycore::step() {
     }
     case 0x03: {
         const uint32_t addr = v1 + sign_extend(instr >> 20, 12);
+        const uint32_t raw_data = mem_.read32(addr);
         write_rd = true;
+        trace.dmem_valid = true;
+        trace.dmem_is_read = true;
+        trace.dmem_addr = addr;
+        trace.dmem_rdata = raw_data;
         switch (funct3) {
         case 0x0:
-            result = sign_extend(mem_.read8(addr), 8);
+            result = sign_extend(raw_data & 0xffu, 8);
             break;
         case 0x1:
-            result = sign_extend(mem_.read16(addr), 16);
+            result = sign_extend(raw_data & 0xffffu, 16);
             break;
         case 0x2:
-            result = mem_.read32(addr);
+            result = raw_data;
             break;
         case 0x4:
-            result = mem_.read8(addr);
+            result = raw_data & 0xffu;
             break;
         case 0x5:
-            result = mem_.read16(addr);
+            result = raw_data & 0xffffu;
             break;
         default:
             write_rd = false;
+            trace.dmem_valid = false;
             break;
         }
         break;
@@ -173,15 +219,25 @@ void mycore::step() {
     case 0x23: {
         const uint32_t imm = sign_extend(((instr >> 25) << 5) | rd, 12);
         const uint32_t addr = v1 + imm;
+        trace.dmem_valid = true;
+        trace.dmem_is_write = true;
+        trace.dmem_addr = addr;
+        trace.dmem_wdata = v2;
         switch (funct3) {
         case 0x0:
+            trace.dmem_wstrb = 0x1;
             mem_.write8(addr, v2);
             break;
         case 0x1:
+            trace.dmem_wstrb = 0x3;
             mem_.write16(addr, v2);
             break;
         case 0x2:
+            trace.dmem_wstrb = 0xf;
             mem_.write32(addr, v2);
+            break;
+        default:
+            trace.dmem_valid = false;
             break;
         }
         break;
@@ -242,7 +298,12 @@ void mycore::step() {
         break;
     }
 
+    trace.commit = write_rd;
+    trace.rd = rd;
+    trace.rd_value = (rd == 0) ? 0 : result;
+
     if (write_rd && rd != 0) state_.regs[rd] = result;
     state_.regs[0] = 0;
     state_.pc = next_pc;
+    return trace;
 }

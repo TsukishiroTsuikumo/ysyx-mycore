@@ -1,5 +1,6 @@
 #include "state.hpp"
 #include <fstream>
+#include <iostream>
 #include <stdexcept>
 #include <vector>
 
@@ -51,7 +52,7 @@ void memory::load_image(const string& filename) {
         throw runtime_error("Failed to open memory image file: " + filename);
     }
 
-    mem.clear();
+    clear();
 
     uint32_t word;
     uint32_t addr = 0;
@@ -60,6 +61,12 @@ void memory::load_image(const string& filename) {
         write32(addr, word);
         addr += 4;
     }
+
+    cout << "CMODEL: loaded " << dec << (addr / 4) << " words from " << filename << " (last addr=0x" << hex << addr << ")" << endl;
+}
+
+void memory::clear() {
+    mem.clear();
 }
 
 void memory::write8(uint32_t addr, uint32_t data) {
@@ -81,13 +88,25 @@ void memory::write32(uint32_t addr, uint32_t data) {
 }
 
 uint8_t memory::read8(uint32_t addr) const {
-    return mem.at(addr);
+    auto it = mem.find(addr);
+    if (it == mem.end()) return 0;
+    return it->second;
 }
 
 uint16_t memory::read16(uint32_t addr) const {
-    return (mem.at(addr + 1) << 8) | mem.at(addr);
+    return (static_cast<uint16_t>(read8(addr + 1)) << 8) | read8(addr);
 }
 
 uint32_t memory::read32(uint32_t addr) const {
-    return (mem.at(addr + 3) << 24) | (mem.at(addr + 2) << 16) | (mem.at(addr + 1) << 8) | mem.at(addr);
+    return (static_cast<uint32_t>(read8(addr + 3)) << 24) |
+           (static_cast<uint32_t>(read8(addr + 2)) << 16) |
+           (static_cast<uint32_t>(read8(addr + 1)) << 8) |
+           read8(addr);
+}
+
+bool memory::has_word(uint32_t addr) const {
+    return mem.find(addr) != mem.end() &&
+           mem.find(addr + 1) != mem.end() &&
+           mem.find(addr + 2) != mem.end() &&
+           mem.find(addr + 3) != mem.end();
 }

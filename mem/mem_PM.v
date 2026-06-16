@@ -2,7 +2,7 @@ module mem_PM #(
     parameter PM_addr_width = 14 // 16KB memory (2^14 bytes)
 )(
     input               clk_pm,
-    input               rst_pm,
+    input               reset_pm,
 
     input               ifetch_in,
     input       [31:0]  pm_addr_in,
@@ -36,9 +36,9 @@ module mem_PM #(
     endfunction
 
     
-    always @(posedge rst_pm) begin
+    always @(posedge reset_pm) begin
         integer i;
-        if(rst_pm) begin
+        if(reset_pm) begin
             for (i = 0; i < PM_size; i = i + 1) begin
                 PM[i] = 0;
             end

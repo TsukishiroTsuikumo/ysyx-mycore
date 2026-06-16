@@ -4,7 +4,7 @@
 module test_bench;
 
     import uvm_pkg::*;
-    import mycore_uvm_pkg::*;
+    import mycore_pkg::*;
 
     bit clk;
     int unsigned reg_init_seed;
@@ -28,7 +28,7 @@ module test_bench;
 
     mycore_wrapper dut (
         .clk            (clk),
-        .reset          (icache_if_inst.rst),
+        .reset          (icache_if_inst.reset),
 
         .pm_req_ready   (icache_if_inst.req_ready),
         .pm_resp_valid  (icache_if_inst.resp_valid),
@@ -49,9 +49,11 @@ module test_bench;
 
         .probe_pc       (probe_if_inst.pc),
         .probe_regfile  (probe_if_inst.regfile_value),
+        .probe_retire    (probe_if_inst.retire),
         .probe_commit   (probe_if_inst.commit),
         .probe_rd_addr  (probe_if_inst.rd_addr),
-        .probe_rd_data  (probe_if_inst.rd_data)
+        .probe_rd_data  (probe_if_inst.rd_data),
+        .probe_instr    (probe_if_inst.instr)
     );
 
     function automatic logic [31:0] make_init_reg_value(
@@ -97,8 +99,8 @@ module test_bench;
 
     string testname;
     initial begin
-        icache_if_inst.rst = 1'b1;
-        dcache_if_inst.rst = 1'b1;
+        icache_if_inst.reset = 1'b1;
+        dcache_if_inst.reset = 1'b1;
         probe_if_inst.reset = 1'b1;
 
         uvm_config_db#(virtual icache_if)::set(null, "*", "vif", icache_if_inst);

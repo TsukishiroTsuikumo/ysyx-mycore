@@ -21,9 +21,11 @@ module mycore_wrapper (
 
     output  [31:0]  probe_pc,
     output  [31:0]  probe_regfile [0:31],
+    output          probe_retire,
     output          probe_commit,
     output  [4:0]   probe_rd_addr,
-    output  [31:0]  probe_rd_data
+    output  [31:0]  probe_rd_data,
+    output  [31:0]  probe_instr
 );
 
     reg use_cache;
@@ -140,7 +142,7 @@ module mycore_wrapper (
 
     Dcache u_dcache (
         .clk                (clk),
-        .rst                (reset),
+        .reset                (reset),
 
         .dm_req_addr_in     (core_dm_req_addr),
         .dm_req_rvalid_in   (core_dm_req_rvalid),
@@ -195,27 +197,37 @@ module mycore_wrapper (
         end
     endgenerate
 
-    assign probe_pc = u_core.PC_id;
-
     reg        probe_commit_r;
     reg [4:0]  probe_rd_addr_r;
     reg [31:0] probe_rd_data_r;
+    reg        probe_retire_r;
+    reg [31:0] probe_pc_r;
+    reg [31:0] probe_instr_r;
 
     always @(posedge clk or posedge reset) begin
         if (reset) begin
             probe_commit_r  <= 1'b0;
             probe_rd_addr_r <= 5'b0;
             probe_rd_data_r <= 32'b0;
+            probe_retire_r <= 1'b0;
+            probe_pc_r <= 32'b0;
+            probe_instr_r <= 32'b0;
         end
         else begin
             probe_commit_r  <= u_core.commit_valid;
             probe_rd_addr_r <= u_core.w1_addr_wb;
             probe_rd_data_r <= u_core.w1_in_wb;
+            probe_retire_r  <= u_core.retire_valid;
+            probe_pc_r      <= u_core.PC_mem_wb;
+            probe_instr_r   <= u_core.instr_mem_wb;
         end
     end
 
     assign probe_commit = probe_commit_r;
     assign probe_rd_addr = probe_rd_addr_r;
     assign probe_rd_data = probe_rd_data_r;
+    assign probe_retire = probe_retire_r;
+    assign probe_pc = probe_pc_r;
+    assign probe_instr = probe_instr_r;
 
 endmodule

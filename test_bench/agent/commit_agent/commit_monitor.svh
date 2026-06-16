@@ -3,7 +3,7 @@ class commit_monitor extends uvm_monitor;
 
     virtual probe_if probe;
     uvm_analysis_port#(probe_item) analysis_port;
-    uvm_event #(uvm_object) test_done;
+    uvm_event#(uvm_object) test_done;
 
     function new(string name, uvm_component parent);
         super.new(name, parent);
@@ -19,25 +19,30 @@ class commit_monitor extends uvm_monitor;
 
     virtual task run_phase(uvm_phase phase);
         probe_item item;
-        int unsigned commit_time = 0;
+        int unsigned retire_time = 0;
         test_done = uvm_event_pool::get_global("test_done");
         forever begin
             @(posedge probe.clk);
+            uvm_wait_for_nba_region();
             if(probe.reset) begin
-                commit_time = 0;
+                retire_time = 0;
                 continue;
             end
-            if(probe.commit) begin
+            if(probe.retire) begin
                 item = probe_item::type_id::create("item");
+                item.retire = probe.retire;
+                item.commit = probe.commit;
                 item.rd_addr = probe.rd_addr;
                 item.rd_value = probe.rd_data;
                 item.pc = probe.pc;
+                item.instr = probe.instr;
                 analysis_port.write(item);
-                commit_time = commit_time + 1;
+
+                retire_time = retire_time + 1;
             end
-            if(commit_time >= `TEST_TIMES) begin
+            if(retire_time >= `TEST_TIMES) begin
                 test_done.trigger();
-                commit_time = 0;
+                retire_time = 0;
             end
         end
     endtask

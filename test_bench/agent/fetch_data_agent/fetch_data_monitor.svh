@@ -22,7 +22,7 @@ class fetch_data_monitor extends uvm_monitor;
         fetch_data_item read_q[$];
         forever begin
             @(posedge vif.clk);
-            if(vif.rst) begin
+            if(vif.reset) begin
                 read_q.delete();
                 continue;
             end

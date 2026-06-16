@@ -20,24 +20,40 @@ class fetch_instr_driver extends uvm_driver #(instr_item);
     virtual task run_phase(uvm_phase phase);
 
         instr_item item;
-        bit        resp_v_next;
-        bit [31:0] resp_data_next;
-        bit        req_fire_sample;
+        bit        pending_valid;
+        bit [31:0] pending_data;
+        bit        ready_now;
 
         vif.req_ready  <= 1'b0;
         vif.resp_valid <= 1'b0;
         vif.resp_data  <= 32'h0000_0013;
 
-        resp_v_next    = 1'b0;
-        resp_data_next = 32'h0000_0013;
-        req_fire_sample = 1'b0;
+        pending_valid = 1'b0;
+        pending_data  = 32'h0000_0013;
+        ready_now     = 1'b0;
 
         fork
             begin
                 forever begin
                     @(negedge vif.clk);
-                    vif.req_ready <= !vif.rst;
-                    req_fire_sample = !vif.rst && vif.req_valid;
+                    if (vif.reset) begin
+                        vif.req_ready  <= 1'b0;
+                        vif.resp_valid <= 1'b0;
+                        vif.resp_data  <= 32'h0000_0013;
+                        pending_valid  = 1'b0;
+                        pending_data   = 32'h0000_0013;
+                        ready_now      = 1'b0;
+                    end
+                    else begin
+                        ready_now = 1'b1;
+
+                        vif.req_ready  <= ready_now;
+                        vif.resp_valid <= pending_valid;
+                        vif.resp_data  <= pending_data;
+
+                        pending_valid = 1'b0;
+                        pending_data  = 32'h0000_0013;
+                    end
                 end
             end
 
@@ -45,26 +61,15 @@ class fetch_instr_driver extends uvm_driver #(instr_item);
                 forever begin
                     @(posedge vif.clk);
 
-                    if (vif.rst) begin
-                        vif.req_ready  <= 1'b0;
-                        vif.resp_valid <= 1'b0;
-                        vif.resp_data  <= 32'h0000_0013;
-                        resp_v_next      = 1'b0;
-                        resp_data_next   = 32'h0000_0013;
-                        req_fire_sample  = 1'b0;
+                    if (vif.reset) begin
+                        pending_valid = 1'b0;
+                        pending_data  = 32'h0000_0013;
                     end
-                    else begin
-                        vif.resp_valid <= resp_v_next;
-                        vif.resp_data  <= resp_data_next;
-
-                        resp_v_next = 1'b0;
-
-                        if (req_fire_sample) begin
-                            seq_item_port.get_next_item(item);
-                            resp_data_next = item.instr;
-                            resp_v_next    = 1'b1;
-                            seq_item_port.item_done();
-                        end
+                    else if (vif.req_valid && vif.req_ready) begin
+                        seq_item_port.get_next_item(item);
+                        pending_data  = item.instr;
+                        pending_valid = 1'b1;
+                        seq_item_port.item_done();
                     end
                 end
             end
