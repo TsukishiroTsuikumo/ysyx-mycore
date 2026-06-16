@@ -54,10 +54,12 @@ module mycore (
   // ----------------- IF to ID ------------------ //
   // --------------------------------------------- //
 
+  wire pc_en = ~(if_stall && !flush_sig[0]);
+
   reg_PC PC(
     .clk(clk),
     .reset(reset),
-    .pc_en(!if_stall),
+    .pc_en(pc_en),
     .pcw(next_pc),
     .pcr(current_pc_if)
   );

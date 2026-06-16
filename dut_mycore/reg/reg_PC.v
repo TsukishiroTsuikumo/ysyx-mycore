@@ -1,9 +1,7 @@
-`timescale 1ns/1ps
-
 module reg_PC
-( input			  clk,
-  input			  reset,
-  input			  pc_en,
+( input			      clk,
+  input			      reset,
+  input			      pc_en,
   input	  [31:0]  pcw,
   output  [31:0]  pcr
 );

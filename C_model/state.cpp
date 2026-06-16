@@ -89,7 +89,7 @@ void memory::write32(uint32_t addr, uint32_t data) {
 
 uint8_t memory::read8(uint32_t addr) const {
     auto it = mem.find(addr);
-    if (it == mem.end()) return 0;
+    if (it == mem.end()) return 0x13;
     return it->second;
 }
 

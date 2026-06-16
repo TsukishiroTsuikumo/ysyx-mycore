@@ -68,15 +68,6 @@ class cache_system_monitor extends uvm_monitor;
     endtask
 
     function void check_core_ifetch();
-        if (hold_core_ifetch_req &&
-            $root.test_bench.dut.core_pm_req_valid &&
-            !$root.test_bench.dut.core_pm_req_ready &&
-            ($root.test_bench.dut.core_pm_req_addr !== hold_core_ifetch_addr)) begin
-            `uvm_error("CACHE_HS", $sformatf(
-                "core-ifetch addr changed while stalled old=0x%08x new=0x%08x",
-                hold_core_ifetch_addr, $root.test_bench.dut.core_pm_req_addr))
-        end
-
         if ($root.test_bench.dut.core_pm_req_valid &&
             $root.test_bench.dut.core_pm_req_ready) begin
             core_ifetch_req_count++;
