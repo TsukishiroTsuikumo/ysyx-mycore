@@ -56,9 +56,6 @@ mycore_retire_trace mycore::step() {
     const uint32_t instr = has ? mem_.read32(state_.pc) : 0x00000013u;
     const uint32_t pc = state_.pc;
 
-    if (step_count < 5 || (pc >= 0x130 && pc <= 0x140))
-        std::cout << "CMODEL step[" << step_count << "]: pc=0x" << std::hex << pc
-                  << " has=" << has << " instr=0x" << instr << std::dec << std::endl;
     step_count++;
     const uint32_t opcode = instr & 0x7f;
     const uint32_t rd = (instr >> 7) & 0x1f;

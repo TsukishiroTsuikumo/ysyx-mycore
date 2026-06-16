@@ -144,12 +144,24 @@ module Dcache #(
         cpu_wstrb_line = {DM_LINE_BYTES{1'b0}};
         cpu_wdata_line = {DM_LINE_WIDTH{1'b0}};
 
-        for (byte_idx = 0; byte_idx < 4; byte_idx = byte_idx + 1) begin
-            line_byte_idx = req_offset_q_ext;
-            line_byte_idx = line_byte_idx + byte_idx;
-            if (req_wstrb_q[byte_idx] && line_byte_idx < DM_LINE_BYTES) begin
-                cpu_wstrb_line[line_byte_idx] = 1'b1;
-                cpu_wdata_line[line_byte_idx*8 +: 8] = req_wdata_q[byte_idx*8 +: 8];
+        if (current_state == IDLE && (dm_req_wvalid_in || dm_req_rvalid_in)) begin
+            for (byte_idx = 0; byte_idx < 4; byte_idx = byte_idx + 1) begin
+                line_byte_idx = dm_req_addr_in[OFFSET_WIDTH-1:0];
+                line_byte_idx = line_byte_idx + byte_idx;
+                if (dm_req_wstrb_in[byte_idx] && line_byte_idx < DM_LINE_BYTES) begin
+                    cpu_wstrb_line[line_byte_idx] = 1'b1;
+                    cpu_wdata_line[line_byte_idx*8 +: 8] = dm_req_wdata_in[byte_idx*8 +: 8];
+                end
+            end
+        end
+        else begin
+            for (byte_idx = 0; byte_idx < 4; byte_idx = byte_idx + 1) begin
+                line_byte_idx = req_offset_q_ext;
+                line_byte_idx = line_byte_idx + byte_idx;
+                if (req_wstrb_q[byte_idx] && line_byte_idx < DM_LINE_BYTES) begin
+                    cpu_wstrb_line[line_byte_idx] = 1'b1;
+                    cpu_wdata_line[line_byte_idx*8 +: 8] = req_wdata_q[byte_idx*8 +: 8];
+                end
             end
         end
     end

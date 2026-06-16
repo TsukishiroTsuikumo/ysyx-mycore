@@ -103,6 +103,7 @@ module one_set #(
         if(reset) begin
             for(i=0; i<WAY_NUM; i=i+1) begin
                 line_state[i] <= 2'b00; // Invalidate all lines on reset
+                line_time[i]  <= {WAY_WIDTH{1'b0}}; // Initialize LRU timestamps
             end
             wr_fire_out <= 1'b0;
         end
