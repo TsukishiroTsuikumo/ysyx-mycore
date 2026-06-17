@@ -102,47 +102,58 @@ module decoder
                         end
                     endcase
                 end
-                else begin
+                else if(func7 == 7'b0000000) begin
                     case(func3)
                         3'b000: begin
                             use_adder = 1'b1;
-                            if(func7 == 7'b0000000) begin
-                                adder_op = 3'b000; // add
-                            end
-                            else if(func7 == 7'b0100000) begin
-                                adder_op = 3'b111; // sub
-                            end
-                        end
-                        3'b111: begin
-                            alu_op = 2'b10; // and
-                            use_alu = 1'b1;
-                        end
-                        3'b110: begin
-                            alu_op = 2'b01; // or
-                            use_alu = 1'b1;
-                        end
-                        3'b100: begin
-                            alu_op = 2'b11; // xor
-                            use_alu = 1'b1;
+                            adder_op = 3'b000; // add
                         end
                         3'b001: begin
                             shifter_op = 2'b01; // sll
                             use_shifter = 1'b1;
                         end
+                        3'b010: begin
+                            adder_op = 3'b001; // slt
+                            use_adder = 1'b1;
+                        end
+                        3'b011: begin
+                            adder_op = 3'b101; // sltu
+                            use_adder = 1'b1;
+                        end
+                        3'b100: begin
+                            alu_op = 2'b11; // xor
+                            use_alu = 1'b1;
+                        end
                         3'b101: begin
                             use_shifter = 1'b1;
-                            if(func7 == 7'b0000000) begin
-                                shifter_op = 2'b10; // srl
-                            end
-                            else if(func7 == 7'b0100000) begin
-                                shifter_op = 2'b11; // sra
-                            end
+                            shifter_op = 2'b10; // srl
+                        end
+                        3'b110: begin
+                            alu_op = 2'b01; // or
+                            use_alu = 1'b1;
+                        end
+                        3'b111: begin
+                            alu_op = 2'b10; // and
+                            use_alu = 1'b1;
+                        end
+                    endcase
+                end
+                else if(func7 == 7'b0100000) begin
+                    case(func3)
+                        3'b000: begin
+                            use_adder = 1'b1;
+                            adder_op = 3'b111; // sub
+                        end
+                        3'b101: begin
+                            shifter_op = 2'b11; // sra
+                            use_shifter = 1'b1;
                         end
                     endcase
                 end
             end
 
         // ----- I-Type ----- //
+        //fence, fence.tso, pause, ecall, ebreak are not implemented
             7'b0010011: begin
                 sel_imm = 1'b1;
                 sel_rd  = 1'b1;
@@ -152,21 +163,21 @@ module decoder
                         adder_op = 3'b000; // addi
                         use_adder = 1'b1;
                     end
-                    3'b111: begin
-                        alu_op = 2'b10; // andi
-                        use_alu = 1'b1;
+                    3'b001: begin
+                        shifter_op = 2'b01; // slli
+                        use_shifter = 1'b1;
                     end
-                    3'b110: begin
-                        alu_op = 2'b01; // ori
-                        use_alu = 1'b1;
+                    3'b010: begin
+                        adder_op = 3'b001; // slti
+                        use_adder = 1'b1;
+                    end
+                    3'b011: begin
+                        adder_op = 3'b101; // sltiu
+                        use_adder = 1'b1;
                     end
                     3'b100: begin
                         alu_op = 2'b11; // xori
                         use_alu = 1'b1;
-                    end
-                    3'b001: begin
-                        shifter_op = 2'b01; // slli
-                        use_shifter = 1'b1;
                     end
                     3'b101: begin
                         if(func7 == 7'b0000000) begin
@@ -177,6 +188,14 @@ module decoder
                             shifter_op = 2'b11; // srai
                             use_shifter = 1'b1;
                         end
+                    end
+                    3'b110: begin
+                        alu_op = 2'b01; // ori
+                        use_alu = 1'b1;
+                    end
+                    3'b111: begin
+                        alu_op = 2'b10; // andi
+                        use_alu = 1'b1;
                     end
                 endcase
             end

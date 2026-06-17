@@ -8,7 +8,7 @@ package mycore_pkg;
     `include "uvm_macros.svh"
 
     `ifndef TEST_TIMES
-        `define TEST_TIMES 200
+        `define TEST_TIMES 5000
     `endif
 
     `uvm_analysis_imp_decl(_instr)
@@ -59,9 +59,9 @@ package mycore_pkg;
     `include "test/base_test/instr_base_test.svh"
     `include "test/base_test/program_base_test.svh"
     `include "test/base_test/cache_base_test.svh"
-    `include "test/core_only_test/r_type_test/r_type_item.svh"
-    `include "test/core_only_test/r_type_test/r_type_scoreboard.svh"
-    `include "test/core_only_test/r_type_test/r_type_test.svh"
+    `include "test/core_only_test/calc_test/calc_item.svh"
+    `include "test/core_only_test/calc_test/calc_scoreboard.svh"
+    `include "test/core_only_test/calc_test/calc_test.svh"
     `include "test/core_only_test/ld_test/ld_item.svh"
     `include "test/core_only_test/st_test/st_item.svh"
     `include "test/core_only_test/jp_link_test/jp_link_item.svh"

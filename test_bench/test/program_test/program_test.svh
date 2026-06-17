@@ -9,7 +9,7 @@ class program_test extends program_base_test;
     endfunction
 
     virtual function void build_phase(uvm_phase phase);
-        instr_item::type_id::set_type_override(r_type_item::get_type());
+        instr_item::type_id::set_type_override(calc_item::get_type());
         mycore_scoreboard::type_id::set_type_override(program_scoreboard::get_type());
 
         image = program_image::type_id::create("image");

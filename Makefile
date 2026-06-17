@@ -12,15 +12,6 @@ endif
 ifneq ($(MEM_FILE),)
 RUN_ARGS += +MEM_FILE=$(MEM_FILE)
 endif
-ifneq ($(TARGET_COMMITS),)
-RUN_ARGS += +TARGET_COMMITS=$(TARGET_COMMITS)
-endif
-ifneq ($(TIMEOUT_CYCLES),)
-RUN_ARGS += +TIMEOUT_CYCLES=$(TIMEOUT_CYCLES)
-endif
-ifneq ($(SIM_TIMEOUT),)
-RUN_ARGS += +SIM_TIMEOUT=$(SIM_TIMEOUT)
-endif
 
 CXX 				?= g++
 C_MODEL_DIR 		:= C_model

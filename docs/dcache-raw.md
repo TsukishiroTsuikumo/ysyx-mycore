@@ -2,7 +2,7 @@
 
 ## BUG信息
 
-- 现象：启用 Dcache 后执行 `mem_image_test` 测试程序，大量 DMEM 读取返回 NOP 预填充值（`0x00000013`）而非之前 store 写入的数据。Dcache 的 Read-After-Write 失效。
+- 现象：启用Dcache后执行`mem_image_test`测试程序，大量DMEM读取返回NOP预填充值（`0x00000013`）而非之前 store 写入的数据。Dcache的Read After Write失效。
 
 - 是否修复：已修复
 
@@ -142,4 +142,4 @@ end
 | 测试 | 修复前 | 修复后 |
 |------|--------|--------|
 | `mem_image_test` | pass=78 fail=148 dmem_checked=22 | **pass=155 fail=0 dmem_checked=89** |
-| `r_type_test` | — | **pass=55 fail=0** |
+| `calc_test` | — | **pass=55 fail=0** |

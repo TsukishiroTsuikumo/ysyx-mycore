@@ -145,12 +145,12 @@ module mycore (
     
     .rs1_addr_id(rs1_addr_id),
     .rs2_addr_id(rs2_addr_id),
-    .rd_addr_id_ex(w1_addr_id_ex),
-    .rd_addr_ex_mem(w1_addr_ex_mem),
-    .rd_addr_mem_wb(w1_addr_mem_wb),
-    .w1_en_id_ex(w1_en_id_ex),
-    .w1_en_ex_mem(w1_en_ex_mem),
-    .w1_en_mem_wb(w1_en_mem_wb),
+    .rd_addr_id_ex(rd_addr_id_ex),
+    .rd_addr_ex_mem(rd_addr_ex_mem),
+    .rd_addr_mem_wb(rd_addr_mem_wb),
+    .w1_en_id_ex(sel_rd_id_ex),
+    .w1_en_ex_mem(sel_rd_ex_mem),
+    .w1_en_mem_wb(sel_rd_mem_wb),
     .valid_id_ex(valid_id_ex),
     .valid_ex_mem(valid_ex_mem),
     .valid_mem_wb(valid_mem_wb),
@@ -170,7 +170,7 @@ module mycore (
     .r2_addr(rs2_addr_id),
     .r2_out(r2_out_id),
     .w1_en(commit_valid),
-    .w1_addr(w1_addr_wb),
+    .w1_addr(rd_addr_wb),
     .w1_in(w1_in_wb)
   );
 
@@ -178,9 +178,9 @@ module mycore (
   // ---------------- ID to EX ------------------- //
   // --------------------------------------------- //
 
-  reg   [4:0] w1_addr_id_ex;
+  reg   [4:0] rd_addr_id_ex;
   reg  [31:0] imm_id_ex;
-  reg         w1_en_id_ex;
+  reg         sel_rd_id_ex;
   reg         sel_imm_id_ex;
   reg   [6:0] use_signal_id_ex;
   reg  [31:0] r1_out_id_ex;
@@ -202,9 +202,9 @@ module mycore (
 
   always @(posedge clk or posedge reset) begin
     if(reset | flush_sig[2]) begin
-      w1_addr_id_ex <= 5'b0;
+      rd_addr_id_ex <= 5'b0;
       imm_id_ex <= 32'b0;
-      w1_en_id_ex <= 1'b0;
+      sel_rd_id_ex <= 1'b0;
       sel_imm_id_ex <= 1'b0;
       use_signal_id_ex <= 7'b0;
       r1_out_id_ex <= 32'b0;
@@ -223,9 +223,9 @@ module mycore (
       valid_id_ex <= 1'b0;
     end
     else if(hzd_stall[1]) begin
-      w1_addr_id_ex <= w1_addr_id_ex;
+      rd_addr_id_ex <= rd_addr_id_ex;
       imm_id_ex <= imm_id_ex;
-      w1_en_id_ex <= w1_en_id_ex;
+      sel_rd_id_ex <= sel_rd_id_ex;
       sel_imm_id_ex <= sel_imm_id_ex;
       use_signal_id_ex <= use_signal_id_ex;
       r1_out_id_ex <= r1_out_id_ex;
@@ -244,9 +244,9 @@ module mycore (
       valid_id_ex <= valid_id_ex;
     end
     else begin
-      w1_addr_id_ex       <= rd_addr_id;
+      rd_addr_id_ex       <= rd_addr_id;
       imm_id_ex           <= imm_id;
-      w1_en_id_ex         <= sel_rd_id;
+      sel_rd_id_ex        <= sel_rd_id;
       sel_imm_id_ex       <= sel_imm_id;
       use_signal_id_ex    <= use_signal_id;
       r1_out_id_ex        <= r1_out_id;
@@ -294,6 +294,7 @@ module mycore (
   adder adder_inst(
     .is_used(use_signal_id_ex[0]),
     .opcode(adder_op_id_ex),
+    .sel_rd(sel_rd_id_ex),
     .addA(rs1),
     .addB(rs2),
     .addC(addC),
@@ -354,8 +355,8 @@ module mycore (
   // ----------------- EX to MEM ------------------- //
   // ----------------------------------------------- //
 
-  reg  [4:0] w1_addr_ex_mem;
-  reg        w1_en_ex_mem;
+  reg  [4:0] rd_addr_ex_mem;
+  reg        sel_rd_ex_mem;
   reg [31:0] pipe_ex_mem;
   reg [31:0] dm_addr_ex_mem;
   reg  [3:0] dm_ld_ex_mem;
@@ -367,8 +368,8 @@ module mycore (
 
   always @(posedge clk or posedge reset) begin
     if(reset) begin
-      w1_addr_ex_mem <= 5'b0;
-      w1_en_ex_mem <= 1'b0;
+      rd_addr_ex_mem <= 5'b0;
+      sel_rd_ex_mem <= 1'b0;
       pipe_ex_mem <= 32'b0;
       dm_addr_ex_mem <= 32'b0;
       dm_ld_ex_mem <= 4'b0;
@@ -379,8 +380,8 @@ module mycore (
       PC_ex_mem <= 32'b0;
     end
     else if(flush_sig[3]) begin // flush
-      w1_addr_ex_mem <= 5'b0;
-      w1_en_ex_mem <= 1'b0;
+      rd_addr_ex_mem <= 5'b0;
+      sel_rd_ex_mem <= 1'b0;
       pipe_ex_mem <= 32'b0;
       dm_addr_ex_mem <= 32'b0;
       dm_ld_ex_mem <= 4'b0;
@@ -391,8 +392,8 @@ module mycore (
       instr_ex_mem <= 32'b0;
     end
     else if(hzd_stall[2]) begin
-      w1_addr_ex_mem <= w1_addr_ex_mem;
-      w1_en_ex_mem <= w1_en_ex_mem;
+      rd_addr_ex_mem <= rd_addr_ex_mem;
+      sel_rd_ex_mem <= sel_rd_ex_mem;
       pipe_ex_mem <= pipe_ex_mem;
       dm_addr_ex_mem <= dm_addr_ex_mem;
       dm_ld_ex_mem <= dm_ld_ex_mem;
@@ -418,8 +419,8 @@ module mycore (
           endcase
         end
       endcase
-      w1_en_ex_mem   <= w1_en_id_ex;
-      w1_addr_ex_mem <= w1_addr_id_ex;
+      sel_rd_ex_mem   <= sel_rd_id_ex;
+      rd_addr_ex_mem <= rd_addr_id_ex;
       dm_addr_ex_mem <= dm_addr_ex;
       dm_ld_ex_mem   <= dm_ld_ex;
       dm_st_ex_mem   <= dm_st_ex;
@@ -445,8 +446,8 @@ module mycore (
   // ----------------------------------------------- //
 
   reg [31:0]  pipe_mem_wb;
-  reg  [4:0]  w1_addr_mem_wb;
-  reg         w1_en_mem_wb;
+  reg  [4:0]  rd_addr_mem_wb;
+  reg         sel_rd_mem_wb;
   reg  [3:0]  dm_ld_mem_wb;
   reg  [2:0]  lsu_op_mem_wb;
   reg         dm_req_rready_mem_wb;
@@ -458,8 +459,8 @@ module mycore (
   always @(posedge clk or posedge reset) begin
     if(reset | flush_sig[4]) begin
       pipe_mem_wb <= 32'b0;
-      w1_addr_mem_wb <= 5'b0;
-      w1_en_mem_wb <= 1'b0;
+      rd_addr_mem_wb <= 5'b0;
+      sel_rd_mem_wb <= 1'b0;
       dm_ld_mem_wb <= 4'b0;
       lsu_op_mem_wb <= 3'b0;
       valid_mem_wb <= 1'b0;
@@ -470,8 +471,8 @@ module mycore (
     end
     else if(hzd_stall[3]) begin
       pipe_mem_wb <= pipe_mem_wb;
-      w1_addr_mem_wb <= w1_addr_mem_wb;
-      w1_en_mem_wb <= w1_en_mem_wb;
+      rd_addr_mem_wb <= rd_addr_mem_wb;
+      sel_rd_mem_wb <= sel_rd_mem_wb;
       dm_ld_mem_wb <= dm_ld_mem_wb;
       lsu_op_mem_wb <= lsu_op_mem_wb;
       dm_req_rready_mem_wb <= dm_req_rready_mem_wb;
@@ -482,8 +483,8 @@ module mycore (
     end
     else begin
       pipe_mem_wb <= pipe_ex_mem;
-      w1_addr_mem_wb <= w1_addr_ex_mem;
-      w1_en_mem_wb <= w1_en_ex_mem;
+      rd_addr_mem_wb <= rd_addr_ex_mem;
+      sel_rd_mem_wb <= sel_rd_ex_mem;
       dm_ld_mem_wb <= dm_ld_ex_mem;
       lsu_op_mem_wb <= lsu_op_ex_mem;
       dm_req_rready_mem_wb <= dm_req_rready_in && dm_req_rvalid_out;
@@ -510,9 +511,9 @@ module mycore (
       default: dm_rd_wb = 32'b0;
     endcase
   end
-  wire  [4:0] w1_addr_wb = w1_addr_mem_wb;
+  wire  [4:0] rd_addr_wb = rd_addr_mem_wb;
   wire [31:0] w1_in_wb = is_ld_wb ? dm_rd_wb : pipe_mem_wb;
-  wire        commit_valid = w1_en_mem_wb && (!is_ld_wb || dm_resp_rvalid_in) && valid_mem_wb && valid[3];
+  wire        commit_valid = sel_rd_mem_wb && (!is_ld_wb || dm_resp_rvalid_in) && valid_mem_wb && valid[3];
   wire        retire_valid = valid_mem_wb && valid[3];
 
 endmodule

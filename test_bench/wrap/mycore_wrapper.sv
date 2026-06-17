@@ -71,8 +71,14 @@ module mycore_wrapper (
         .dm_resp_wvalid_in  (core_dm_resp_wvalid)
     );
 
+    string uvm_testname;
     initial begin
-        use_cache = $test$plusargs("USE_CACHE");
+        if (!$value$plusargs("UVM_TESTNAME=%s", uvm_testname)) begin
+            uvm_testname = "";
+        end
+        use_cache = $test$plusargs("USE_CACHE") ||
+                    (uvm_testname == "program_test") ||
+                    (uvm_testname == "mem_image_test");
         if (use_cache) begin
             $display("MYCORE_WRAPPER: USE_CACHE enabled");
         end
@@ -215,7 +221,7 @@ module mycore_wrapper (
         end
         else begin
             probe_commit_r  <= u_core.commit_valid;
-            probe_rd_addr_r <= u_core.w1_addr_wb;
+            probe_rd_addr_r <= u_core.rd_addr_wb;
             probe_rd_data_r <= u_core.w1_in_wb;
             probe_retire_r  <= u_core.retire_valid;
             probe_pc_r      <= u_core.PC_mem_wb;

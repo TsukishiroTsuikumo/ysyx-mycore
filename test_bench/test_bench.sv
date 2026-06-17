@@ -1,5 +1,5 @@
 `timescale 1ns/1ps
-`define SIM_TIMEOUT_CYCLES 200000
+`define SIM_TIMEOUT_CYCLES 20000000
 
 module test_bench;
 

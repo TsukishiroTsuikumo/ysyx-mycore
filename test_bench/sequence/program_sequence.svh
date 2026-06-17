@@ -1,5 +1,3 @@
-`define TEST_TIMES 200
-
 class program_sequence extends uvm_sequence #(instr_item);
     `uvm_object_utils(program_sequence)
 

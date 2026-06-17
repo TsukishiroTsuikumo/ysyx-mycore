@@ -4,8 +4,6 @@ class cache_system_monitor extends uvm_monitor;
     uvm_analysis_port #(instr_item) instr_port;
     uvm_analysis_port #(fetch_data_item) dmem_port;
 
-    bit enabled;
-
     int unsigned core_ifetch_req_count;
     int unsigned core_ifetch_resp_count;
     int unsigned ic_mem_req_count;
@@ -43,11 +41,6 @@ class cache_system_monitor extends uvm_monitor;
     endfunction
 
     virtual task run_phase(uvm_phase phase);
-        enabled = $test$plusargs("USE_CACHE");
-        if (!enabled) begin
-            return;
-        end
-
         forever begin
             @(posedge $root.test_bench.clk);
             uvm_wait_for_nba_region();
@@ -226,12 +219,10 @@ class cache_system_monitor extends uvm_monitor;
 
     virtual function void report_phase(uvm_phase phase);
         super.report_phase(phase);
-        if (enabled) begin
-            `uvm_info("CACHE_HS", $sformatf(
-                "core_ifetch req=%0d resp=%0d ic_mem req=%0d resp=%0d",
-                core_ifetch_req_count, core_ifetch_resp_count,
-                ic_mem_req_count, ic_mem_resp_count), UVM_LOW)
-        end
+        `uvm_info("CACHE_HS", $sformatf(
+            "core_ifetch req=%0d resp=%0d ic_mem req=%0d resp=%0d",
+            core_ifetch_req_count, core_ifetch_resp_count,
+            ic_mem_req_count, ic_mem_resp_count), UVM_LOW)
     endfunction
 
 endclass

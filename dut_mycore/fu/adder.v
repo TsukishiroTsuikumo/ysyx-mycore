@@ -1,9 +1,10 @@
 module adder (
-    input                is_used,     
+    input                is_used,
     input         [2:0]  opcode,
+    input                sel_rd,
     input        [31:0]  addA,
     input        [31:0]  addB,
-    output       [31:0]  addC,
+    output  reg  [31:0]  addC,
     output  reg          branch_cd // branch condition signal, if = 1, branch is taken
 );
     localparam add = 3'b000;
@@ -26,7 +27,7 @@ module adder (
     assign b_in_mux = sel_sub ? ~b_in : b_in;
     wire [33:0] sum;
 
-    assign sum = {1'b0, a_in} + {1'b0, b_in_mux} + sel_sub; // if sel_sub is 1, add 1 for two's complement
+    assign sum = {1'b0, a_in} + {1'b0, b_in_mux} + sel_sub;
 
     wire ZF, SF, OF, CF;
     assign ZF = (sum[31:0] == 32'b0);
@@ -35,17 +36,26 @@ module adder (
     assign CF = sum[32];
 
     always @(*) begin
-        case (opcode)
-            eq: branch_cd = ZF;
-            ne: branch_cd = ~ZF;
-            lt: branch_cd = SF ^ OF;
-            ge: branch_cd = ~(SF ^ OF);
-            ltu: branch_cd = ~CF;
-            geu: branch_cd = CF;
-            default: branch_cd = 1'b0;
-        endcase
+        branch_cd = 1'b0;
+        addC = 32'b0;
+        if (sel_rd) begin
+            case (opcode)
+                add: addC = sum[31:0];
+                sub: addC = sum[31:0];
+                lt:  addC = (SF ^ OF) ? 32'b1 : 32'b0;
+                ltu: addC = ~CF ? 32'b1 : 32'b0;
+            endcase
+        end
+        else begin
+            case (opcode)
+                eq:  branch_cd = ZF;
+                ne:  branch_cd = ~ZF;
+                lt:  branch_cd = SF ^ OF;
+                ge:  branch_cd = ~(SF ^ OF);
+                ltu: branch_cd = ~CF;
+                geu: branch_cd = CF;
+            endcase
+        end
     end
-
-    assign addC = sum[31:0];
 
 endmodule

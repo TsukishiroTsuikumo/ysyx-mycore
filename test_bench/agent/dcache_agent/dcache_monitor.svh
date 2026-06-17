@@ -4,8 +4,6 @@ class dcache_monitor extends uvm_monitor;
 
     uvm_analysis_port #(fetch_data_item) data_port;
 
-    bit enabled;
-
     int unsigned core_dread_req_count;
     int unsigned core_dread_resp_count;
     int unsigned core_dwrite_req_count;
@@ -34,11 +32,6 @@ class dcache_monitor extends uvm_monitor;
     endfunction
 
     virtual task run_phase(uvm_phase phase);
-        enabled = $test$plusargs("USE_CACHE");
-        if (!enabled) begin
-            return;
-        end
-
         forever begin
             @(posedge $root.test_bench.clk);
             uvm_wait_for_nba_region();
@@ -177,14 +170,12 @@ class dcache_monitor extends uvm_monitor;
 
     virtual function void report_phase(uvm_phase phase);
         super.report_phase(phase);
-        if (enabled) begin
-            `uvm_info("DCACHE_HS", $sformatf(
-                "core_dread req=%0d resp=%0d core_dwrite req=%0d resp=%0d dc_mem_read req=%0d resp=%0d dc_mem_write req=%0d resp=%0d",
-                core_dread_req_count, core_dread_resp_count,
-                core_dwrite_req_count, core_dwrite_resp_count,
-                dc_mem_read_req_count, dc_mem_read_resp_count,
-                dc_mem_write_req_count, dc_mem_write_resp_count), UVM_LOW)
-        end
+        `uvm_info("DCACHE_HS", $sformatf(
+            "core_dread req=%0d resp=%0d core_dwrite req=%0d resp=%0d dc_mem_read req=%0d resp=%0d dc_mem_write req=%0d resp=%0d",
+            core_dread_req_count, core_dread_resp_count,
+            core_dwrite_req_count, core_dwrite_resp_count,
+            dc_mem_read_req_count, dc_mem_read_resp_count,
+            dc_mem_write_req_count, dc_mem_write_resp_count), UVM_LOW)
     endfunction
 
 endclass
