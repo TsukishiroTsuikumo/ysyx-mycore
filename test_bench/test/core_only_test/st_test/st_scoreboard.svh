@@ -77,8 +77,8 @@ class st_scoreboard extends mycore_scoreboard;
         if (item != null) act_q.push_back(item);
     endfunction
 
-    virtual function void write_commit(probe_item item);
-        super.write_commit(item);
+    virtual function void write_retire(probe_item item);
+        super.write_retire(item);
         if ((item != null) && item.retire) begin
             instr_q.push_back(item.instr);
         end

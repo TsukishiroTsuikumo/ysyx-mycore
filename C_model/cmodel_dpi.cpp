@@ -48,36 +48,32 @@ extern "C" void cmodel_set_reg(uint32_t idx, uint32_t value) {
 }
 
 extern "C" int cmodel_step(
-    uint32_t* retire,
-    uint32_t* commit,
     uint32_t* pc,
     uint32_t* instr,
-    uint32_t* rd,
-    uint32_t* rd_value,
-    uint32_t* dmem_valid,
-    uint32_t* dmem_is_read,
-    uint32_t* dmem_is_write,
-    uint32_t* dmem_addr,
-    uint32_t* dmem_wstrb,
-    uint32_t* dmem_wdata,
-    uint32_t* dmem_rdata
+    uint32_t* commit_valid,
+    uint32_t* rd_addr,
+    uint32_t* rd_data,
+    uint32_t* addr,
+    uint32_t* is_read,
+    uint32_t* rdata,
+    uint32_t* is_write,
+    uint32_t* wstrb,
+    uint32_t* wdata
 ) {
     try {
-        const mycore_retire_trace trace = g_core.step();
+        const cmodel_retire_trace trace = g_core.step();
 
-        *retire = trace.retire ? 1u : 0u;
-        *commit = trace.commit ? 1u : 0u;
         *pc = trace.pc;
         *instr = trace.instr;
-        *rd = trace.rd;
-        *rd_value = trace.rd_value;
-        *dmem_valid = trace.dmem_valid ? 1u : 0u;
-        *dmem_is_read = trace.dmem_is_read ? 1u : 0u;
-        *dmem_is_write = trace.dmem_is_write ? 1u : 0u;
-        *dmem_addr = trace.dmem_addr;
-        *dmem_wstrb = trace.dmem_wstrb;
-        *dmem_wdata = trace.dmem_wdata;
-        *dmem_rdata = trace.dmem_rdata;
+        *commit_valid = trace.commit_valid ? 1u : 0u;
+        *rd_addr = trace.rd_addr;
+        *rd_data = trace.rd_data;
+        *addr = trace.addr;
+        *is_read = trace.is_read ? 1u : 0u;
+        *rdata = trace.rdata;
+        *is_write = trace.is_write ? 1u : 0u;
+        *wstrb = trace.wstrb;
+        *wdata = trace.wdata;
         return 1;
     } catch (const std::exception& e) {
         report_error("cmodel_step", e);

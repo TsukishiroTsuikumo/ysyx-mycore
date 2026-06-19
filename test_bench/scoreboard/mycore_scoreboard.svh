@@ -2,7 +2,7 @@ class mycore_scoreboard extends uvm_scoreboard;
     `uvm_component_utils(mycore_scoreboard)
 
     uvm_analysis_imp_instr  #(instr_item, mycore_scoreboard) instr_imp;
-    uvm_analysis_imp_commit #(probe_item, mycore_scoreboard) commit_imp;
+    uvm_analysis_imp_retire #(probe_item, mycore_scoreboard) retire_imp;
     uvm_analysis_imp_dmem   #(fetch_data_item,  mycore_scoreboard) dmem_ap;
 
     int unsigned instr_count;
@@ -12,7 +12,7 @@ class mycore_scoreboard extends uvm_scoreboard;
     function new(string name, uvm_component parent);
         super.new(name, parent);
         instr_imp  = new("instr_imp", this);
-        commit_imp = new("commit_imp", this);
+        retire_imp = new("retire_imp", this);
         dmem_ap    = new("dmem_ap", this);
     endfunction
 
@@ -22,7 +22,7 @@ class mycore_scoreboard extends uvm_scoreboard;
         end
     endfunction
 
-    virtual function void write_commit(probe_item item);
+    virtual function void write_retire(probe_item item);
         if (item != null) begin
             if (item.retire) instr_count++;
             if (item.commit) commit_count++;

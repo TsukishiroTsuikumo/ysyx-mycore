@@ -68,10 +68,10 @@ class ld_scoreboard extends mycore_scoreboard;
         end
     endfunction
 
-    virtual function void write_commit(probe_item item);
+    virtual function void write_retire(probe_item item);
         load_t act;
 
-        super.write_commit(item);
+        super.write_retire(item);
         if (item == null) return;
 
         if (item.retire) begin
@@ -103,7 +103,7 @@ class ld_scoreboard extends mycore_scoreboard;
             act = act_q.pop_front();
 
             exp_addr = load_addr(instr);
-            exp_value = load_value(instr, dmem.data);
+            exp_value = load_value(instr, dmem.rdata);
             exp_rd = instr[11:7];
 
             if (!dmem.is_read) begin
@@ -128,7 +128,7 @@ class ld_scoreboard extends mycore_scoreboard;
                 fail_count++;
                 `uvm_error("LD_SCORE", $sformatf(
                     "load data mismatch instr=0x%08x rd=x%0d raw=0x%08x exp=0x%08x act=0x%08x",
-                    instr, exp_rd, dmem.data, exp_value, act.value))
+                    instr, exp_rd, dmem.rdata, exp_value, act.value))
             end
             else begin
                 pass_count++;

@@ -5,7 +5,9 @@ class dcache_item extends uvm_sequence_item;
     rand bit [31:0] addr;
     rand bit [3:0]  wstrb;
     rand bit [31:0] wdata;
-    bit      [31:0] rdata;
+         bit [31:0] rdata;
+         bit [31:0] pc;
+         bit [31:0] instr;
 
     constraint kind_c {
         is_read != is_write;
@@ -18,6 +20,8 @@ class dcache_item extends uvm_sequence_item;
         `uvm_field_int(wstrb,    UVM_DEFAULT)
         `uvm_field_int(wdata,    UVM_DEFAULT)
         `uvm_field_int(rdata,    UVM_DEFAULT)
+        `uvm_field_int(pc,       UVM_DEFAULT)
+        `uvm_field_int(instr,    UVM_DEFAULT)
     `uvm_object_utils_end
 
     function new(string name = "dcache_item");

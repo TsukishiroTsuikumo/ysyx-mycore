@@ -1,5 +1,5 @@
-class commit_monitor extends uvm_monitor;
-    `uvm_component_utils(commit_monitor)
+class retire_monitor extends uvm_monitor;
+    `uvm_component_utils(retire_monitor)
 
     virtual probe_if probe;
     uvm_analysis_port#(probe_item) analysis_port;
@@ -13,7 +13,7 @@ class commit_monitor extends uvm_monitor;
     virtual function void build_phase(uvm_phase phase);
         super.build_phase(phase);
         if(!uvm_config_db#(virtual probe_if)::get(this, "", "probe", probe)) begin
-            `uvm_fatal("COMMIT_MONITOR", "Failed to get probe interface")
+            `uvm_fatal("RETIRE_MONITOR", "Failed to get probe interface")
         end
     endfunction
 

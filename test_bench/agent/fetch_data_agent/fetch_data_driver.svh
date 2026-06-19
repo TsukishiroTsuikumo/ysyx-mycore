@@ -78,7 +78,7 @@ class fetch_data_driver extends uvm_driver #(fetch_data_item);
 
                         if(vif.req_rvalid && vif.req_rready) begin
                             seq_item_port.get_next_item(item);
-                            resp_rdata_next  = item.data;
+                            resp_rdata_next  = item.rdata;
                             resp_rvalid_next = 1'b1;
                             read_busy = 1'b1;
                             seq_item_port.item_done();

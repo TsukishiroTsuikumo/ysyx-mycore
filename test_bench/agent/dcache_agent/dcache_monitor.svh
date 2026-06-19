@@ -25,6 +25,8 @@ class dcache_monitor extends uvm_monitor;
     bit [31:0] hold_dc_mem_write_addr;
     bit [127:0] hold_dc_mem_write_data;
     bit [31:0] core_dread_addr_q[$];
+    bit [31:0] core_dread_pc_q[$];
+    bit [31:0] core_dread_instr_q[$];
 
     function new(string name, uvm_component parent);
         super.new(name, parent);
@@ -42,6 +44,8 @@ class dcache_monitor extends uvm_monitor;
                 hold_dc_mem_read_req = 1'b0;
                 hold_dc_mem_write_req = 1'b0;
                 core_dread_addr_q.delete();
+                core_dread_pc_q.delete();
+                core_dread_instr_q.delete();
                 continue;
             end
 
@@ -66,21 +70,25 @@ class dcache_monitor extends uvm_monitor;
             $root.test_bench.dut.core_dm_req_rready) begin
             core_dread_req_count++;
             core_dread_addr_q.push_back($root.test_bench.dut.core_dm_req_addr);
+            core_dread_pc_q.push_back($root.test_bench.dut.u_core.PC_ex_mem);
+            core_dread_instr_q.push_back($root.test_bench.dut.u_core.instr_ex_mem);
         end
         if ($root.test_bench.dut.core_dm_resp_rvalid) begin
             fetch_data_item item;
             core_dread_resp_count++;
             item = fetch_data_item::type_id::create("item");
-            item.is_read = 1'b1;
+            item.is_read  = 1'b1;
             item.is_write = 1'b0;
             if (core_dread_addr_q.size() != 0) begin
                 item.addr = core_dread_addr_q.pop_front();
+                item.pc = core_dread_pc_q.pop_front();
+                item.instr = core_dread_instr_q.pop_front();
             end
             else begin
                 item.addr = 32'b0;
                 `uvm_error("DCACHE_HS", "core-dcache read response without pending request")
             end
-            item.data = $root.test_bench.dut.core_dm_resp_rdata;
+            item.rdata = $root.test_bench.dut.core_dm_resp_rdata;
             data_port.write(item);
         end
 
@@ -104,11 +112,13 @@ class dcache_monitor extends uvm_monitor;
             fetch_data_item item;
             core_dwrite_req_count++;
             item = fetch_data_item::type_id::create("item");
-            item.is_read = 1'b0;
-            item.is_write = 1'b1;
-            item.addr = $root.test_bench.dut.core_dm_req_addr;
-            item.wstrb = $root.test_bench.dut.core_dm_req_wstrb;
-            item.wdata = $root.test_bench.dut.core_dm_req_wdata;
+            item.is_read    = 1'b0;
+            item.is_write   = 1'b1;
+            item.addr       = $root.test_bench.dut.core_dm_req_addr;
+            item.wstrb      = $root.test_bench.dut.core_dm_req_wstrb;
+            item.wdata      = $root.test_bench.dut.core_dm_req_wdata;
+            item.pc         = $root.test_bench.dut.u_core.PC_ex_mem;
+            item.instr      = $root.test_bench.dut.u_core.instr_ex_mem;
             data_port.write(item);
         end
         if ($root.test_bench.dut.core_dm_resp_wvalid) begin

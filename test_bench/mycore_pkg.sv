@@ -12,7 +12,7 @@ package mycore_pkg;
     `endif
 
     `uvm_analysis_imp_decl(_instr)
-    `uvm_analysis_imp_decl(_commit)
+    `uvm_analysis_imp_decl(_retire)
     `uvm_analysis_imp_decl(_dmem)
 
     `include "cmodel_dpi.svh"
@@ -47,8 +47,8 @@ package mycore_pkg;
     `include "agent/dcache_agent/dcache_monitor.svh"
     `include "agent/dcache_agent/dcache_agent.svh"
 
-    `include "agent/commit_agent/commit_monitor.svh"
-    `include "agent/commit_agent/commit_agent.svh"
+    `include "agent/retire_agent/retire_monitor.svh"
+    `include "agent/retire_agent/retire_agent.svh"
     `include "agent/cache_system_agent/cache_system_monitor.svh"
 
     `include "scoreboard/mycore_scoreboard.svh"

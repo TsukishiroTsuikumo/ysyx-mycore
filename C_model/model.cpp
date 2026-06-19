@@ -50,7 +50,7 @@ void mycore::set_reg(uint32_t idx, uint32_t value) {
     }
 }
 
-mycore_retire_trace mycore::step() {
+cmodel_retire_trace mycore::step() {
     static int step_count = 0;
     const bool has = mem_.has_word(state_.pc);
     const uint32_t instr = has ? mem_.read32(state_.pc) : 0x00000013u;
@@ -69,9 +69,8 @@ mycore_retire_trace mycore::step() {
     uint32_t next_pc = pc + 4;
     uint32_t result = 0;
     bool write_rd = false;
-    mycore_retire_trace trace;
+    cmodel_retire_trace trace;
 
-    trace.retire = true;
     trace.pc = pc;
     trace.instr = instr;
 
@@ -186,10 +185,9 @@ mycore_retire_trace mycore::step() {
         const uint32_t addr = v1 + sign_extend(instr >> 20, 12);
         const uint32_t raw_data = mem_.read32(addr);
         write_rd = true;
-        trace.dmem_valid = true;
-        trace.dmem_is_read = true;
-        trace.dmem_addr = addr;
-        trace.dmem_rdata = raw_data;
+        trace.is_read = true;
+        trace.addr = addr;
+        trace.rdata = raw_data;
         switch (funct3) {
         case 0x0:
             result = sign_extend(raw_data & 0xffu, 8);
@@ -208,7 +206,7 @@ mycore_retire_trace mycore::step() {
             break;
         default:
             write_rd = false;
-            trace.dmem_valid = false;
+            trace.is_read = false;
             break;
         }
         break;
@@ -216,25 +214,24 @@ mycore_retire_trace mycore::step() {
     case 0x23: {
         const uint32_t imm = sign_extend(((instr >> 25) << 5) | rd, 12);
         const uint32_t addr = v1 + imm;
-        trace.dmem_valid = true;
-        trace.dmem_is_write = true;
-        trace.dmem_addr = addr;
-        trace.dmem_wdata = v2;
+        trace.is_write = true;
+        trace.addr = addr;
+        trace.wdata = v2;
         switch (funct3) {
         case 0x0:
-            trace.dmem_wstrb = 0x1;
+            trace.wstrb = 0x1;
             mem_.write8(addr, v2);
             break;
         case 0x1:
-            trace.dmem_wstrb = 0x3;
+            trace.wstrb = 0x3;
             mem_.write16(addr, v2);
             break;
         case 0x2:
-            trace.dmem_wstrb = 0xf;
+            trace.wstrb = 0xf;
             mem_.write32(addr, v2);
             break;
         default:
-            trace.dmem_valid = false;
+            trace.is_write = false;
             break;
         }
         break;
@@ -295,9 +292,9 @@ mycore_retire_trace mycore::step() {
         break;
     }
 
-    trace.commit = write_rd;
-    trace.rd = rd;
-    trace.rd_value = (rd == 0) ? 0 : result;
+    trace.commit_valid = write_rd;
+    trace.rd_addr = rd;
+    trace.rd_data = (rd == 0) ? 0 : result;
 
     if (write_rd && rd != 0) state_.regs[rd] = result;
     state_.regs[0] = 0;

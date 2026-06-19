@@ -19,9 +19,9 @@ class jp_link_scoreboard extends mycore_scoreboard;
         super.new(name, parent);
     endfunction
 
-    virtual function void write_commit(probe_item item);
+    virtual function void write_retire(probe_item item);
         reg_write_t act;
-        super.write_commit(item);
+        super.write_retire(item);
         if (item == null) return;
         if (item.commit) begin
             act.rd = item.rd_addr;

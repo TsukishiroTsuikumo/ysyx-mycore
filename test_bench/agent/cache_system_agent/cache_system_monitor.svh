@@ -129,7 +129,7 @@ class cache_system_monitor extends uvm_monitor;
                 item.addr = 32'b0;
                 `uvm_error("CACHE_HS", "core-dcache read response without pending request")
             end
-            item.data = $root.test_bench.dut.core_dm_resp_rdata;
+            item.rdata = $root.test_bench.dut.core_dm_resp_rdata;
             dmem_port.write(item);
         end
 

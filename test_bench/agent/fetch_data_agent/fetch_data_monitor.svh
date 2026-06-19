@@ -38,7 +38,7 @@ class fetch_data_monitor extends uvm_monitor;
                 end
                 else begin
                     item = read_q.pop_front();
-                    item.data = vif.resp_rdata;
+                    item.rdata = vif.resp_rdata;
                     analysis_port.write(item);
                 end
             end

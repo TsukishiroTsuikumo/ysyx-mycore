@@ -194,10 +194,10 @@ class calc_scoreboard extends mycore_scoreboard;
         if (rd != 5'd0) exp_regs[rd] = exp.value;
     endfunction
 
-    virtual function void write_commit(probe_item item);
+    virtual function void write_retire(probe_item item);
         reg_write_t act;
 
-        super.write_commit(item);
+        super.write_retire(item);
         if (item == null) return;
 
         if (item.retire) begin
