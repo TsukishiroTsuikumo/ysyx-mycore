@@ -36,7 +36,7 @@ RUN_ARGS += +SIM_TIMEOUT=$(SIM_TIMEOUT)
 endif
 
 IMAGE_DIR 			?= ./csrc/image
-IMAGE_TARGET 		?= image.mem
+IMAGE_TARGET 		?= main_image.mem
 
 # Only capture extra args when 'image' is the target
 ifneq ($(filter image,$(MAKECMDGOALS)),)

@@ -32,6 +32,9 @@ module mycore (
   wire [31:0] current_pc_if;
   wire [31:0] next_pc;
   wire  [4:0] flush_sig;
+  wire        is_cd_jp_if = is_cd_jp_ex   && valid_id_ex && valid[1] && !hzd_stall[2];
+  wire        is_jal_if   = is_jal_id     && instr_valid && valid[0] && !hzd_stall[1];
+  wire        is_jalr_if  = is_jalr_id_ex && valid_id_ex && valid[1] && !hzd_stall[2];
 
   controller controller_inst(
     .current_pc(current_pc_if),
@@ -39,12 +42,12 @@ module mycore (
 
     .pm_req_addr(pm_req_addr_out),
 
-    .is_cd_jp(is_cd_jp_ex && valid_id_ex),
+    .is_cd_jp(is_cd_jp_if),
     .cd_jp_imm(imm_id_ex),
-    .is_jal(is_jal_id && valid[0]),
+    .is_jal(is_jal_if),
     .jal_pc(PC_id),
     .jal_imm(imm_id),
-    .is_jalr(is_jalr_id_ex && valid_id_ex),
+    .is_jalr(is_jalr_if),
     .jalr_trgt(addC),
     .jp_inst_pc(PC_id_ex),
     .flush_sig(flush_sig)
