@@ -5,12 +5,48 @@ TEST 				?= program_test
 RUN_ARGS 			?= +UVM_TESTNAME=$(TEST)
 VERILATOR_SOLVER 	= z3 --in
 export VERILATOR_SOLVER
+VERILATOR_FLAGS 	= \
+					-sv \
+					--timing \
+					--binary \
+					--trace \
+					--build -j 0 \
+					-Wall -Wno-fatal \
+					--top-module $(TB_TOP) \
+					-I$(UVM_HOME)/src \
+					+incdir+$(UVM_HOME)/src \
+					+incdir+./test_bench \
+					-CFLAGS "-std=c++17 -I$(C_MODEL_DIR)" \
+					$(UVM_HOME)/src/uvm_pkg.sv \
+					-F flist.f \
+					$(C_MODEL_DPI_SRCS) \
+					+define+UVM_NO_DPI
 
-ifeq ($(USE_CACHE),1)
-RUN_ARGS += +USE_CACHE
-endif
 ifneq ($(MEM_FILE),)
 RUN_ARGS += +MEM_FILE=$(MEM_FILE)
+endif
+ifneq ($(TARGET_COMMITS),)
+RUN_ARGS += +TARGET_COMMITS=$(TARGET_COMMITS)
+endif
+ifneq ($(TIMEOUT_CYCLES),)
+RUN_ARGS += +TIMEOUT_CYCLES=$(TIMEOUT_CYCLES)
+endif
+ifneq ($(SIM_TIMEOUT),)
+RUN_ARGS += +SIM_TIMEOUT=$(SIM_TIMEOUT)
+endif
+
+IMAGE_DIR 			?= ./csrc/image
+IMAGE_TARGET 		?= image.mem
+
+# Only capture extra args when 'image' is the target
+ifneq ($(filter image,$(MAKECMDGOALS)),)
+IMAGE_ARGS 			:= $(filter-out image,$(MAKECMDGOALS))
+ifeq ($(strip $(IMAGE_ARGS)),)
+IMAGE_SRC 			:= ./csrc/main.cpp
+else
+IMAGE_SRC 			:= $(IMAGE_ARGS)
+endif
+$(IMAGE_ARGS):;
 endif
 
 CXX 				?= g++
@@ -20,25 +56,12 @@ C_MODEL_SRCS 		:= $(C_MODEL_DIR)/main.cpp $(C_MODEL_DIR)/model.cpp $(C_MODEL_DIR
 C_MODEL_DPI_SRCS 	:= $(C_MODEL_DIR)/model.cpp $(C_MODEL_DIR)/state.cpp $(C_MODEL_DIR)/cmodel_dpi.cpp
 C_MODEL_FLAGS 		:= -std=c++17 -Wall -Wextra -I $(C_MODEL_DIR)
 
-VERILATOR_FLAGS = \
-	-sv \
-	--timing \
-	--binary \
-	--trace \
-	--build -j 0 \
-	-Wall -Wno-fatal \
-	--top-module $(TB_TOP) \
-	-I$(UVM_HOME)/src \
-	+incdir+$(UVM_HOME)/src \
-	+incdir+./test_bench \
-	-CFLAGS "-std=c++17 -I$(C_MODEL_DIR)" \
-	$(UVM_HOME)/src/uvm_pkg.sv \
-	-F flist.f \
-	$(C_MODEL_DPI_SRCS) \
-	+define+UVM_NO_DPI
+LOG ?=
+
+
 
 run: build
-	VERILATOR_SOLVER="$(VERILATOR_SOLVER)" ./$(OBJ_DIR)/V$(TB_TOP) $(RUN_ARGS)
+	VERILATOR_SOLVER="$(VERILATOR_SOLVER)" ./$(OBJ_DIR)/V$(TB_TOP) $(RUN_ARGS) 2>&1 $(if $(LOG),| tee $(LOG))
 
 build:
 	$(VERILATOR) $(VERILATOR_FLAGS)
@@ -60,14 +83,16 @@ cmodel:
 	$(CXX) $(C_MODEL_FLAGS) $(C_MODEL_SRCS) -o $(C_MODEL_BIN)
 
 image:
-	riscv64-unknown-elf-gcc ./scripts/start.S \
-		./csrc/main.cpp \
+	riscv64-unknown-elf-gcc \
+		./scripts/start.S \
+		$(IMAGE_SRC) \
 		-march=rv32im -mabi=ilp32 \
 		-nostdlib -nostartfiles -ffreestanding \
 		-Wl,-T,./scripts/linker.ld \
-		-o test.elf
-	riscv64-unknown-elf-objcopy -O binary test.elf test.bin
-	xxd -e -g 4 -c 4 test.bin | awk '{print $$2}' > image.mem
-	rm -f test.elf test.bin
+		-o $(IMAGE_DIR)/test.elf
+	riscv64-unknown-elf-objcopy -O binary $(IMAGE_DIR)/test.elf $(IMAGE_DIR)/test.bin
+	mkdir -p $(dir $(IMAGE_TARGET))
+	xxd -e -g 4 -c 4 $(IMAGE_DIR)/test.bin | awk '{print $$2}' > $(IMAGE_DIR)/$(IMAGE_TARGET)
+	rm -f $(IMAGE_DIR)/test.elf $(IMAGE_DIR)/test.bin
 
 .PHONY: build run clean image cmodel

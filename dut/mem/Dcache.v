@@ -54,13 +54,14 @@ module Dcache #(
     localparam integer TAG_WIDTH    = 32 - OFFSET_WIDTH - INDEX_WIDTH;
     localparam [31:0]  LINE_MASK    = DM_LINE_BYTES - 1;
 
-    localparam IDLE  = 2'd0;
-    localparam BUSY  = 2'd1;
-    localparam WRMEM = 2'd2;
-    localparam RDMEM = 2'd3;
+    localparam [2:0] IDLE      = 3'd0;
+    localparam [2:0] BUSY      = 3'd1;
+    localparam [2:0] WRMEM     = 3'd2;
+    localparam [2:0] RDMEM     = 3'd3;
+    localparam [2:0] CROSSLINE = 3'd4;
 
-    reg [1:0] current_state;
-    reg [1:0] next_state;
+    reg [2:0] current_state;
+    reg [2:0] next_state;
 
     wire cpu_read_fire;
     wire cpu_write_fire;
@@ -85,6 +86,21 @@ module Dcache #(
     reg refill_done_q;
     reg [31:0] wb_addr_q;
     reg [DM_LINE_WIDTH-1:0] wb_data_q;
+
+    // Cross-line read state
+    reg        cross_active;       // 1 = processing a cross-line read
+    reg        cross_phase;        // 0 = line1, 1 = line2
+    reg [31:0] cross_line_data;    // saved data from line1
+    reg  [3:0] cross_offset;       // original request offset
+
+    // Line2 address (for cross-line reads)
+    wire [31:0]           line2_addr;
+    wire [TAG_WIDTH-1:0]  line2_tag;
+    wire [INDEX_WIDTH-1:0] line2_index;
+
+    assign line2_addr  = (req_addr_q & ~LINE_MASK) + DM_LINE_BYTES;
+    assign line2_tag   = line2_addr[31:OFFSET_WIDTH+INDEX_WIDTH];
+    assign line2_index = line2_addr[OFFSET_WIDTH +: INDEX_WIDTH];
 
     wire [TAG_WIDTH-1:0] active_tag;
     wire [INDEX_WIDTH-1:0] active_index;
@@ -116,28 +132,29 @@ module Dcache #(
     integer byte_idx;
     integer line_byte_idx;
 
-    assign dm_req_wready_out = (current_state == IDLE);
-    assign dm_req_rready_in = (current_state == IDLE) && !dm_req_wvalid_in;
+    // Block new CPU requests during cross-line processing
+    assign dm_req_wready_out = (current_state == IDLE) && !cross_active;
+    assign dm_req_rready_in  = (current_state == IDLE) && !dm_req_wvalid_in && !cross_active;
 
     assign cpu_write_fire = dm_req_wvalid_in && dm_req_wready_out;
-    assign cpu_read_fire = dm_req_rvalid_in && dm_req_rready_in;
-    assign cpu_req_fire = cpu_write_fire || cpu_read_fire;
+    assign cpu_read_fire  = dm_req_rvalid_in && dm_req_rready_in;
+    assign cpu_req_fire   = cpu_write_fire || cpu_read_fire;
     assign cpu_req_is_write_now = cpu_write_fire;
 
     assign req_offset_now = dm_req_addr_in[OFFSET_WIDTH-1:0];
-    assign req_index_now = dm_req_addr_in[OFFSET_WIDTH +: INDEX_WIDTH];
-    assign req_tag_now = dm_req_addr_in[31:OFFSET_WIDTH+INDEX_WIDTH];
+    assign req_index_now  = dm_req_addr_in[OFFSET_WIDTH +: INDEX_WIDTH];
+    assign req_tag_now    = dm_req_addr_in[31:OFFSET_WIDTH+INDEX_WIDTH];
     assign req_line_addr_now = dm_req_addr_in & ~LINE_MASK;
-    assign req_offset_q_ext = {{(32-OFFSET_WIDTH){1'b0}}, req_offset_q};
+    assign req_offset_q_ext  = {{(32-OFFSET_WIDTH){1'b0}}, req_offset_q};
 
-    assign active_tag = (current_state == IDLE) ? req_tag_now : req_tag_q;
+    assign active_tag   = (current_state == IDLE) ? req_tag_now : req_tag_q;
     assign active_index = (current_state == IDLE) ? req_index_now : req_index_q;
 
-    assign selected_rd_hit = set_rd_hit[active_index];
-    assign selected_wr_hit = set_wr_hit[active_index];
+    assign selected_rd_hit  = set_rd_hit[active_index];
+    assign selected_wr_hit  = set_wr_hit[active_index];
     assign selected_rd_fire = set_rd_fire[req_index_q];
     assign selected_wr_fire = set_wr_fire[req_index_q];
-    assign selected_miss = set_miss[active_index];
+    assign selected_miss    = set_miss[active_index];
     assign selected_miss_need_wb = set_miss_need_wb[active_index];
 
     always @(*) begin
@@ -166,6 +183,8 @@ module Dcache #(
         end
     end
 
+    // selected_read_word: reads 4 bytes from the current cache line only.
+    // Cross-line reads are handled by the controller via two line accesses.
     always @(*) begin
         selected_read_word = 32'b0;
 
@@ -185,7 +204,8 @@ module Dcache #(
 
             assign set_rd_req[set_idx] =
                 (current_state == IDLE && cpu_read_fire && req_index_now == SET_INDEX) ||
-                (current_state == BUSY && refill_done_q && !req_is_write_q && req_index_q == SET_INDEX);
+                (current_state == BUSY && refill_done_q && !req_is_write_q && req_index_q == SET_INDEX) ||
+                (current_state == CROSSLINE && req_index_q == SET_INDEX);
 
             assign set_wr_req[set_idx] =
                 (current_state == IDLE && cpu_write_fire && req_index_now == SET_INDEX) ||
@@ -258,7 +278,12 @@ module Dcache #(
             end
 
             BUSY: begin
-                if ((req_is_write_q && selected_wr_fire) || (!req_is_write_q && selected_rd_fire)) begin
+                // Cross-line phase 0 complete → switch to line2
+                if (cross_active && !cross_phase && !req_is_write_q && selected_rd_fire) begin
+                    next_state = CROSSLINE;
+                end
+                else if ((req_is_write_q && selected_wr_fire) ||
+                         (!req_is_write_q && selected_rd_fire)) begin
                     next_state = IDLE;
                 end
                 else begin
@@ -284,6 +309,22 @@ module Dcache #(
                 end
             end
 
+            CROSSLINE: begin
+                // Evaluate hit/miss for line2
+                if (selected_rd_hit) begin
+                    next_state = BUSY;
+                end
+                else if (selected_miss && selected_miss_need_wb) begin
+                    next_state = WRMEM;
+                end
+                else if (selected_miss) begin
+                    next_state = RDMEM;
+                end
+                else begin
+                    next_state = CROSSLINE;
+                end
+            end
+
             default: begin
                 next_state = IDLE;
             end
@@ -296,7 +337,8 @@ module Dcache #(
         dm_resp_wready_out = 1'b0;
 
         dc_req_rvalid = 1'b0;
-        dc_req_raddr = req_addr_q & ~LINE_MASK;
+        dc_req_raddr = (current_state == CROSSLINE) ? line2_addr
+                                                   : (req_addr_q & ~LINE_MASK);
 
         dc_req_wvalid = 1'b0;
         dc_req_waddr = wb_addr_q;
@@ -308,8 +350,23 @@ module Dcache #(
                     dm_resp_wready_out = 1'b1;
                 end
                 else if (!req_is_write_q && selected_rd_fire) begin
-                    dm_resp_rvalid_out = 1'b1;
-                    dm_resp_rdata_out = selected_read_word;
+                    if (!cross_active) begin
+                        // Normal read response
+                        dm_resp_rvalid_out = 1'b1;
+                        dm_resp_rdata_out = selected_read_word;
+                    end
+                    else if (cross_phase) begin
+                        // Phase 1 complete: merge line1 + line2 data
+                        integer b;
+                        dm_resp_rvalid_out = 1'b1;
+                        for (b = 0; b < 4; b = b + 1) begin
+                            if (cross_offset + b < DM_LINE_BYTES)
+                                dm_resp_rdata_out[b*8 +: 8] = cross_line_data[b*8 +: 8];
+                            else
+                                dm_resp_rdata_out[b*8 +: 8] =
+                                    selected_read_word[(cross_offset + b - DM_LINE_BYTES)*8 +: 8];
+                        end
+                    end
                 end
             end
 
@@ -325,7 +382,13 @@ module Dcache #(
                 if (!mem_req_sent) begin
                     dc_req_rvalid = 1'b1;
                 end
-                dc_req_raddr = req_addr_q & ~LINE_MASK;
+            end
+
+            CROSSLINE: begin
+                // CROSSLINE acts like IDLE for the line2 address
+                if (selected_miss_need_wb && !mem_req_sent) begin
+                    // Capture writeback data for line2
+                end
             end
 
             default: begin
@@ -349,9 +412,45 @@ module Dcache #(
             refill_done_q <= 1'b0;
             wb_addr_q <= 32'b0;
             wb_data_q <= {DM_LINE_WIDTH{1'b0}};
+            cross_active <= 1'b0;
+            cross_phase <= 1'b0;
+            cross_line_data <= 32'b0;
+            cross_offset <= 4'd0;
         end
         else begin
-            if (cpu_req_fire) begin
+            // --- cross-line: BUSY phase0 → CROSSLINE transition ---
+            if (current_state == BUSY && cross_active && !cross_phase &&
+                !req_is_write_q && selected_rd_fire) begin
+                // Save line1 data, switch req_*_q to line2
+                cross_line_data <= selected_read_word;
+                cross_phase <= 1'b1;
+                req_addr_q <= line2_addr;
+                req_tag_q <= line2_tag;
+                req_index_q <= line2_index;
+                req_offset_q <= 4'd0;
+                refill_done_q <= 1'b0;
+                mem_req_sent <= 1'b0;
+                if (selected_miss_need_wb) begin
+                    wb_addr_q <= {set_wb_tag[active_index], active_index, {OFFSET_WIDTH{1'b0}}};
+                    wb_data_q <= set_wb_data[active_index];
+                end
+            end
+            // --- cross-line: BUSY phase1 complete → IDLE ---
+            else if (current_state == BUSY && cross_active && cross_phase &&
+                     !req_is_write_q && selected_rd_fire) begin
+                cross_active <= 1'b0;
+                cross_phase <= 1'b0;
+                refill_done_q <= 1'b0;
+            end
+            // --- CROSSLINE state: capture writeback data if needed ---
+            else if (current_state == CROSSLINE && selected_miss && selected_miss_need_wb
+                     && (next_state == WRMEM)) begin
+                wb_addr_q <= {set_wb_tag[active_index], active_index, {OFFSET_WIDTH{1'b0}}};
+                wb_data_q <= set_wb_data[active_index];
+                mem_req_sent <= 1'b0;
+            end
+            // --- cpu_req_fire ---
+            else if (cpu_req_fire) begin
                 req_addr_q <= dm_req_addr_in;
                 req_tag_q <= req_tag_now;
                 req_offset_q <= req_offset_now;
@@ -362,17 +461,28 @@ module Dcache #(
                 mem_req_sent <= 1'b0;
                 refill_done_q <= 1'b0;
 
+                // Detect cross-line read
+                cross_active <= !cpu_req_is_write_now &&
+                                (req_offset_now + 3 >= DM_LINE_BYTES);
+                cross_phase <= 1'b0;
+                if (!cpu_req_is_write_now && (req_offset_now + 3 >= DM_LINE_BYTES))
+                    cross_offset <= req_offset_now[3:0];
+                else
+                    cross_offset <= 4'd0;
+
                 if (selected_miss_need_wb) begin
                     wb_addr_q <= {set_wb_tag[req_index_now], req_index_now, {OFFSET_WIDTH{1'b0}}};
                     wb_data_q <= set_wb_data[req_index_now];
                 end
             end
+            // --- WRMEM ---
             else if (current_state == WRMEM && dc_req_wvalid && dc_req_wready) begin
                 mem_req_sent <= 1'b1;
             end
             else if (current_state == WRMEM && dc_resp_wvalid) begin
                 mem_req_sent <= 1'b0;
             end
+            // --- RDMEM ---
             else if (current_state == RDMEM && dc_req_rvalid && dc_req_rready) begin
                 mem_req_sent <= 1'b1;
             end
@@ -380,10 +490,14 @@ module Dcache #(
                 mem_req_sent <= 1'b0;
                 refill_done_q <= 1'b1;
             end
+            // --- BUSY complete (non-cross) ---
             else if (current_state == BUSY &&
-                     ((req_is_write_q && selected_wr_fire) || (!req_is_write_q && selected_rd_fire))) begin
+                     ((req_is_write_q && selected_wr_fire) ||
+                      (!req_is_write_q && selected_rd_fire))) begin
                 refill_done_q <= 1'b0;
+                cross_active <= 1'b0;
             end
+            // --- IDLE ---
             else if (current_state == IDLE) begin
                 mem_req_sent <= 1'b0;
                 refill_done_q <= 1'b0;

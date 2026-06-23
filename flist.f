@@ -1,24 +1,24 @@
-dut_mycore/mycore.v
-dut_mycore/reg/reg_PC.v
-dut_mycore/reg/reg_R.v
-dut_mycore/reg/instr_queue.v
-dut_mycore/controller/decoder.v
-dut_mycore/controller/controller.v
-dut_mycore/controller/hazard.v
-dut_mycore/fu/shifter.v
-dut_mycore/fu/multiplier.v
-dut_mycore/fu/alu.v
-dut_mycore/fu/lsu.v
-dut_mycore/fu/adder.v
-dut_mycore/fu/divider.v
-dut_mycore/fu/imu.v
+dut/mycore/mycore.v
+dut/mycore/reg/reg_PC.v
+dut/mycore/reg/reg_R.v
+dut/mycore/reg/instr_queue.v
+dut/mycore/controller/decoder.v
+dut/mycore/controller/controller.v
+dut/mycore/controller/hazard.v
+dut/mycore/fu/shifter.v
+dut/mycore/fu/multiplier.v
+dut/mycore/fu/alu.v
+dut/mycore/fu/lsu.v
+dut/mycore/fu/adder.v
+dut/mycore/fu/divider.v
+dut/mycore/fu/imu.v
 
-mem/mem_DM.v
-mem/mem_PM.v
-mem/one_set.v
-mem/Icache.v
-mem/Dcache.v
-mem/MEM.v
+dut/mem/mem_DM.v
+dut/mem/mem_PM.v
+dut/mem/one_set.v
+dut/mem/Icache.v
+dut/mem/Dcache.v
+dut/mem/MEM.v
 
 test_bench/wrap/mycore_wrapper.sv
 

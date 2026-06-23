@@ -76,12 +76,8 @@ module mycore_wrapper (
         if (!$value$plusargs("UVM_TESTNAME=%s", uvm_testname)) begin
             uvm_testname = "";
         end
-        use_cache = $test$plusargs("USE_CACHE") ||
-                    (uvm_testname == "program_test") ||
+        use_cache = (uvm_testname == "program_test") ||
                     (uvm_testname == "mem_image_test");
-        if (use_cache) begin
-            $display("MYCORE_WRAPPER: USE_CACHE enabled");
-        end
     end
 
     wire          ic_req_rvalid;

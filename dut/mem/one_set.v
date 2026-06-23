@@ -50,7 +50,7 @@ module one_set #(
         found_invalid = 1'b0;
 
         for (i = 0; i < WAY_NUM; i = i + 1) begin
-            if ( !hit &&line_state[i][0] && line_tag[i] == set_tag ) begin
+            if ( !hit && line_state[i][0] && line_tag[i] == set_tag ) begin
                 hit = 1'b1;
                 hit_way = i[WAY_WIDTH-1:0];
             end
