@@ -31,6 +31,8 @@ class axi_coverage #(
     localparam int R_CH  = 4;
     localparam int CACHE_LINE_LEN  = 3; // Four 32-bit beats = 16 bytes.
     localparam int CACHE_LINE_SIZE = $clog2(DATA_WIDTH / 8);
+    localparam bit [ADDR_WIDTH-1:0] EXPECTED_ERROR_ADDR = 'h800;
+    localparam bit [1:0] EXPECTED_ERROR_RESP = AXI_RESP_SLVERR;
 
     longint unsigned total_read;
     longint unsigned total_write;
@@ -55,6 +57,10 @@ class axi_coverage #(
     longint unsigned cache_line_write_ok;
     longint unsigned cache_line_shape_errors;
     longint unsigned response_error_count;
+    longint unsigned unexpected_response_error_count;
+    longint unsigned expected_read_error_ok;
+    longint unsigned expected_write_error_ok;
+    longint unsigned partial_write_ok;
     longint unsigned owner_id_errors;
     int unsigned acceptance_errors;
 
@@ -62,6 +68,8 @@ class axi_coverage #(
     bit require_owner_coverage;
     bit require_last_error_coverage;
     bit require_cache_line_traffic;
+    bit require_error_response_coverage;
+    bit require_partial_strobe_coverage;
 
     function new(string name = "axi_coverage", uvm_component parent = null);
         super.new(name, parent);
@@ -84,6 +92,10 @@ class axi_coverage #(
         cache_line_write_ok = 0;
         cache_line_shape_errors = 0;
         response_error_count = 0;
+        unexpected_response_error_count = 0;
+        expected_read_error_ok = 0;
+        expected_write_error_ok = 0;
+        partial_write_ok = 0;
         owner_id_errors = 0;
         acceptance_errors = 0;
     endfunction
@@ -99,6 +111,12 @@ class axi_coverage #(
         void'(uvm_config_db#(bit)::get(
             this, "", "require_cache_line_traffic",
             require_cache_line_traffic));
+        void'(uvm_config_db#(bit)::get(
+            this, "", "require_error_response_coverage",
+            require_error_response_coverage));
+        void'(uvm_config_db#(bit)::get(
+            this, "", "require_partial_strobe_coverage",
+            require_partial_strobe_coverage));
     endfunction
 
     virtual function void write(txn_t txn);
@@ -106,6 +124,9 @@ class axi_coverage #(
         int unsigned burst_idx;
         bit line_shape_ok;
         bit response_ok;
+        bit expected_error_txn;
+        bit expected_error_resp_ok;
+        bit partial_strobe;
 
         if (txn == null) begin
             `uvm_error("AXI_COVERAGE", "Received null transaction")
@@ -119,6 +140,10 @@ class axi_coverage #(
                         (txn.burst == AXI_BURST_INCR) &&
                         txn.last_ok && txn.beat_count_ok;
         response_ok = 1'b1;
+        expected_error_txn = require_error_response_coverage &&
+                             (txn.addr == EXPECTED_ERROR_ADDR);
+        expected_error_resp_ok = 1'b1;
+        partial_strobe = 1'b0;
 
         if (txn.direction == AXI_WRITE) begin
             total_write++;
@@ -131,6 +156,14 @@ class axi_coverage #(
             write_beat_count_hits[txn.beat_count_ok]++;
             write_owner_burst_hits[owner_idx][burst_idx]++;
 
+            foreach (txn.strb_q[i]) begin
+                if ((txn.strb_q[i] != '0) &&
+                    (txn.strb_q[i] != {DATA_WIDTH/8{1'b1}})) begin
+                    partial_strobe = 1'b1;
+                end
+            end
+            if (partial_strobe) partial_write_ok++;
+
             if (txn.aw_backpressure) channel_backpressure_hits[AW_CH]++;
             if (txn.w_backpressure)  channel_backpressure_hits[W_CH]++;
             if (txn.b_backpressure)  channel_backpressure_hits[B_CH]++;
@@ -139,6 +172,16 @@ class axi_coverage #(
 
             response_ok = (txn.bresp == AXI_RESP_OKAY);
             if (!response_ok) response_error_count++;
+            expected_error_resp_ok = (txn.bresp == EXPECTED_ERROR_RESP);
+            if (expected_error_txn) begin
+                if (expected_error_resp_ok)
+                    expected_write_error_ok++;
+                else
+                    unexpected_response_error_count++;
+            end
+            else if (!response_ok) begin
+                unexpected_response_error_count++;
+            end
             if (line_shape_ok && response_ok)
                 cache_line_write_ok++;
             else if (!line_shape_ok)
@@ -153,6 +196,8 @@ class axi_coverage #(
             foreach (txn.resp_q[i]) begin
                 read_resp_hits[txn.resp_q[i]]++;
                 if (txn.resp_q[i] != AXI_RESP_OKAY) response_ok = 1'b0;
+                if (txn.resp_q[i] != EXPECTED_ERROR_RESP)
+                    expected_error_resp_ok = 1'b0;
             end
             read_last_hits[txn.last_ok]++;
             read_beat_count_hits[txn.beat_count_ok]++;
@@ -167,6 +212,16 @@ class axi_coverage #(
             end
 
             if (!response_ok) response_error_count++;
+            if (expected_error_txn) begin
+                if (expected_error_resp_ok &&
+                    (txn.resp_q.size() == txn.expected_beats()))
+                    expected_read_error_ok++;
+                else
+                    unexpected_response_error_count++;
+            end
+            else if (!response_ok) begin
+                unexpected_response_error_count++;
+            end
             if (line_shape_ok && response_ok)
                 cache_line_read_ok++;
             else if (!line_shape_ok)
@@ -219,17 +274,30 @@ class axi_coverage #(
                     "observed %0d transaction(s) with invalid line LEN/SIZE/BURST/LAST",
                     cache_line_shape_errors))
             end
-            if (response_error_count != 0) begin
+            if (unexpected_response_error_count != 0) begin
                 acceptance_errors++;
                 `uvm_error("AXI_ACCEPTANCE", $sformatf(
-                    "observed %0d transaction(s) with non-OKAY response",
-                    response_error_count))
+                    "observed %0d unexpected/missing response-error transaction(s)",
+                    unexpected_response_error_count))
             end
             if (owner_id_errors != 0) begin
                 acceptance_errors++;
                 `uvm_error("AXI_ACCEPTANCE", $sformatf(
                     "observed %0d transaction(s) with invalid owner/ID mapping",
                     owner_id_errors))
+            end
+            if (require_error_response_coverage &&
+                (expected_read_error_ok == 0 ||
+                 expected_write_error_ok == 0)) begin
+                acceptance_errors++;
+                `uvm_error("AXI_ACCEPTANCE", $sformatf(
+                    "missing expected SLVERR coverage read=%0d write=%0d",
+                    expected_read_error_ok, expected_write_error_ok))
+            end
+            if (require_partial_strobe_coverage && partial_write_ok == 0) begin
+                acceptance_errors++;
+                `uvm_error("AXI_ACCEPTANCE",
+                    "missing partial-write strobe coverage")
             end
         end
     endfunction
@@ -250,10 +318,13 @@ class axi_coverage #(
 
         if (require_cache_line_traffic) begin
             `uvm_info("AXI_ACCEPTANCE", $sformatf(
-                "status=%s line_read_ok=%0d line_write_ok=%0d shape_errors=%0d response_errors=%0d owner_id_errors=%0d",
+                "status=%s line_read_ok=%0d line_write_ok=%0d shape_errors=%0d response_errors=%0d unexpected_response_errors=%0d expected_read_error_ok=%0d expected_write_error_ok=%0d partial_write_ok=%0d owner_id_errors=%0d",
                 (acceptance_errors == 0) ? "PASS" : "FAIL",
                 cache_line_read_ok, cache_line_write_ok,
                 cache_line_shape_errors, response_error_count,
+                unexpected_response_error_count,
+                expected_read_error_ok, expected_write_error_ok,
+                partial_write_ok,
                 owner_id_errors), UVM_LOW)
         end
     endfunction

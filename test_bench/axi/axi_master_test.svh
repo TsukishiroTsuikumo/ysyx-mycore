@@ -48,6 +48,10 @@ class axi_master_test extends uvm_test;
             this, "coverage", "require_owner_coverage", 1'b1);
         uvm_config_db#(bit)::set(
             this, "coverage", "require_cache_line_traffic", 1'b1);
+        uvm_config_db#(bit)::set(
+            this, "coverage", "require_error_response_coverage", 1'b1);
+        uvm_config_db#(bit)::set(
+            this, "coverage", "require_partial_strobe_coverage", 1'b1);
 
         agent = agent_t::type_id::create("agent", this);
         coverage = coverage_t::type_id::create("coverage", this);
@@ -97,8 +101,9 @@ class axi_master_test extends uvm_test;
         driver_writes = (agent == null || agent.driver == null) ? 0 :
                         agent.driver.completed_write_count;
 
-        if (transaction_total != 3 || sequence_errors != 0 ||
-            driver_reads != 2 || driver_writes != 1 || error_total != 0) begin
+        if (transaction_total != 19 || sequence_errors != 0 ||
+            check_total != 58 || driver_reads != 13 || driver_writes != 6 ||
+            error_total != 0) begin
             `uvm_error("AXI_ACTIVE_UVM_TEST", $sformatf(
                 "FAIL transactions=%0d sequence_errors=%0d reads=%0d writes=%0d uvm_errors=%0d",
                 transaction_total, sequence_errors, driver_reads,

@@ -46,7 +46,10 @@ module axi_master_uvm_tb;
         .ID_WIDTH   (ID_WIDTH),
         .MEM_WORDS  (1024),
         .DATA_TAG   (32'h6000_0000),
-        .SEED       (32'h1ace_b00c)
+        .SEED       (32'h1ace_b00c),
+        .ENABLE_ERROR_RESPONSES (1'b1),
+        .ERROR_ADDR (32'h0000_0800),
+        .ERROR_RESP (2'b10)
     ) slave (
         .clk           (clk),
         .reset         (reset),

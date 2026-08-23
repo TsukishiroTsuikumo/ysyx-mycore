@@ -59,9 +59,15 @@ class axi_transaction #(
     // Master-driver timing controls.  Keeping these controls on the sequence
     // item makes directed and constrained-random sequences able to request
     // channel stalls without baking a policy into the reusable driver.
-    int unsigned address_delay_cycles;
-    int unsigned beat_delay_cycles;
-    int unsigned response_ready_delay_cycles;
+    rand int unsigned address_delay_cycles;
+    rand int unsigned beat_delay_cycles;
+    rand int unsigned response_ready_delay_cycles;
+
+    constraint bounded_delay_c {
+        address_delay_cycles inside {[0:7]};
+        beat_delay_cycles inside {[0:7]};
+        response_ready_delay_cycles inside {[0:7]};
+    }
 
     // Per-transaction observations used by the explicit coverage subscriber.
     bit aw_backpressure;
