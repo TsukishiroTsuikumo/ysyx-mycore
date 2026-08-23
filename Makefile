@@ -57,6 +57,12 @@ C_MODEL_DPI_SRCS 	:= $(C_MODEL_DIR)/model.cpp $(C_MODEL_DIR)/state.cpp $(C_MODEL
 C_MODEL_FLAGS 		:= -std=c++17 -Wall -Wextra -I $(C_MODEL_DIR)
 
 LOG ?=
+COVERAGE ?= 0
+
+ifeq ($(COVERAGE),1)
+VERILATOR_FLAGS += --coverage --coverage-line --coverage-toggle
+RUN_ARGS += +verilator+coverage+file+$(OBJ_DIR)/coverage.dat
+endif
 
 
 
@@ -77,10 +83,21 @@ checksv:
 	$(VERILATOR) -sv --lint-only -Wall -f flistsv.f
 
 clean:
-	rm -rf $(OBJ_DIR) *.vcd *.fst *.log $(C_MODEL_BIN)
+	rm -rf $(OBJ_DIR) *.vcd *.fst *.log $(C_MODEL_BIN) $(C_MODEL_DIR)/cmodel_tests
 
 cmodel:
 	$(CXX) $(C_MODEL_FLAGS) $(C_MODEL_SRCS) -o $(C_MODEL_BIN)
+
+cmodel-test:
+	$(CXX) $(C_MODEL_FLAGS) C_model/model.cpp C_model/state.cpp C_model/tests.cpp -o $(C_MODEL_DIR)/cmodel_tests
+	./$(C_MODEL_DIR)/cmodel_tests
+
+regression:
+	python3 scripts/regression.py
+
+coverage:
+	python3 scripts/regression.py --coverage
+	verilator_coverage --write-info $(OBJ_DIR)/coverage.info $(OBJ_DIR)/coverage.dat
 
 image:
 	riscv64-unknown-elf-gcc \
@@ -95,4 +112,4 @@ image:
 	xxd -e -g 4 -c 4 $(IMAGE_DIR)/test.bin | awk '{print $$2}' > $(IMAGE_DIR)/$(IMAGE_TARGET)
 	rm -f $(IMAGE_DIR)/test.elf $(IMAGE_DIR)/test.bin
 
-.PHONY: build run clean image cmodel
+.PHONY: build run clean image cmodel cmodel-test regression coverage checkv checksv
