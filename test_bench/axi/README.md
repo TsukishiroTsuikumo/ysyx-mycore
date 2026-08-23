@@ -4,25 +4,31 @@ The package now provides both active and passive AXI4 components:
 
 - `axi_sequencer`, `axi_driver`, and `axi_agent` for master traffic;
 - `axi_monitor`, `axi_coverage`, and `axi_observer` for passive observation;
-- `axi_master_sequence` and `axi_master_test` as an executable active-agent
-  smoke test.
+- `axi_master_sequence`/`axi_master_test` for the directed active gate and
+  `axi_random_stress_sequence`/`axi_random_stress_test` for reproducible,
+  solver-free pressure.
 
 The active driver can transmit FIXED/INCR/WRAP metadata and arbitrary burst
 lengths represented by the transaction payload queues, together with byte
 strobes, USER and owner sidebands, response capture, and programmable address,
-W-beat, and B/R-ready delays. The executable smoke validates only aligned,
+W-beat, and B/R-ready delays. The monitor records both the number of
+backpressured transactions and the actual `VALID && !READY` cycles on every
+channel. The executable tests validate only aligned,
 full-width, four-beat INCR lines, matching the current RTL subset; the other
 metadata forms are not yet acceptance-tested. The driver intentionally allows
 one outstanding sequence item at a time, so multi-ID out-of-order generation
-is deferred to later stress tests.
+is outside this test's current subset.
 
-## Active master smoke
+## Active master directed regression
 
 `axi_master_uvm_tb.sv` connects an active 32-bit AXI agent to the deterministic
-backpressured `axi_random_slave`. The test performs an instruction-owner line
-read, a data-owner line write, and a data-owner readback. The agent's monitor is
-connected to the existing coverage subscriber, and the protocol checker is
-enabled with final-quiescence checking.
+backpressured `axi_random_slave`. The directed test performs 19
+single-outstanding cache-line transactions: 13 reads and six writes with 58
+explicit checks. It covers the original read/write/read path, a partial-strobe
+write and readback, six bounded randomized aligned reads, three deterministic
+write/read stress pairs, and SLVERR read/write responses. The agent's monitor
+is connected to the coverage subscriber, and the protocol checker enforces
+final quiescence.
 
 With `UVM_HOME` pointing at Accellera UVM 2020.3.1, build and run it from the
 repository root:
@@ -33,12 +39,68 @@ verilator --binary --timing -sv -Wall -Wno-fatal --assert \
   -I"$UVM_HOME/src" +incdir+"$UVM_HOME/src" \
   "$UVM_HOME/src/uvm_pkg.sv" \
   -f test_bench/axi/flist_axi_master_uvm.f +define+UVM_NO_DPI
-./obj_dir_axi_uvm/Vaxi_master_uvm_tb +UVM_TESTNAME=axi_master_test
+./obj_dir_axi_uvm/Vaxi_master_uvm_tb \
+  +UVM_TESTNAME=axi_master_test +verilator+seed+20260823
 ```
 
-A successful run prints `AXI_ACTIVE_UVM_TEST ... PASS`, an
+A successful run prints
+`AXI_ACTIVE_UVM_TEST ... PASS transactions=19 checks=58 reads=13 writes=6`, an
 `AXI_ACCEPTANCE ... status=PASS` report, and an AXI protocol report with zero
 procedural errors and no pending transactions.
+
+## Reproducible random stress
+
+The same binary also contains `axi_random_stress_test`. CI runs the two fixed
+seeds `13579bdf` and `2468ace1`; each seed generates
+exactly 64 single-outstanding line transactions (32 reads and 32 writes), while
+the sequence's software memory model checks all read data and byte-strobe
+updates. Thirty successful writes use unique ordinary line addresses and each
+write adds exactly one dependency-ready, later readback of the same address;
+the seed randomizes scheduling among pending readbacks and remaining writes.
+The other two write/read pairs exercise SLVERR (`0x800`) and DECERR (`0x900`).
+Each error write uses full strobes and four beat values deliberately different
+from the pre-write image. Its read compares all four returned beats with that
+pre-write image, proving that this test slave suppressed a write which would
+otherwise have changed memory. That data check is deliberately a contract of
+`axi_random_slave`, not a claim that AXI defines read data returned alongside
+an error response.
+
+The seed also controls ordinary addresses, write data, later WSTRB choices,
+and configured address/beat/response-ready delay buckets without a SAT solver.
+The first four successful writes deterministically cover full, single-byte,
+multi-byte partial and zero WSTRB; error-response writes cannot satisfy those
+required bins.
+
+```sh
+for seed in 13579bdf 2468ace1; do
+  ./obj_dir_axi_uvm/Vaxi_master_uvm_tb \
+    +UVM_TESTNAME=axi_random_stress_test +AXI_RANDOM_SEED="$seed"
+done
+```
+
+A passing seed emits these machine-readable markers:
+
+```text
+AXI_RANDOM_COVERAGE status=PASS seed=... txns=64 reads=32 writes=32 unique_okay_writes=30 paired_readbacks=30 error_write_unchanged=2 ...
+AXI_ERROR_RESPONSE_COVERAGE status=PASS read_slverr=1 read_decerr=1 write_slverr=1 write_decerr=1 protocol_errors=0
+AXI_RANDOM_UVM_TEST ... PASS
+```
+
+The test gates instruction/data read ownership (at least eight each), all three
+configured delay ranges (`0`, `1..3`, `4..7`) for each timing control,
+successful full/single-byte/multi-byte/zero WSTRB shapes, paired data
+readbacks, and OKAY/SLVERR/DECERR in both directions. A zero response-ready
+delay permits an immediate handshake; non-zero settings create real response
+backpressure. Independently of configured buckets, AW, W, B, AR and R must each
+show at least four backpressured transactions and eight actual `VALID &&
+!READY` cycles. Owner/ID mapping, cache-line shape, monitor queues and
+protocol-error counters must all be clean at test end.
+
+The `protocol_errors` field in the random coverage markers is the coverage
+subscriber's aggregate of line-shape, owner/ID, and unexpected-response
+violations.  The independently instantiated protocol checker is a separate
+blocking gate: CI also requires `AXI_PROTOCOL_REPORT` to contain
+`procedural_errors=0` with every pending queue equal to zero.
 
 ## Passive core observation
 
@@ -123,5 +185,11 @@ regression gates:
   malformed read and write LAST observations.
 - `require_cache_line_traffic`: enables the automatic four-beat/OKAY/owner-ID
   acceptance gate used by `program_test_env`.
+- `require_error_response_coverage`: requires the configured read and write
+  error responses.
+- `require_partial_strobe_coverage`: requires at least one partial write.
+- `require_random_stress_coverage`: enables the exact 32R/32W, owner, delay,
+  WSTRB, response, backpressure-cycle and final-queue gates used by the random
+  test.
 
 For Verilator, enable `--assert` so the SVA checker is active.

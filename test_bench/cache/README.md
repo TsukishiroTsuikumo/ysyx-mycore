@@ -35,9 +35,10 @@ The acceptance marker is:
 CACHE_DIRECTED_ACCEPTANCE status=PASS
 ```
 
-Current RTL limitations are reflected rather than hidden: ICache has no
-explicit flush input (reset invalidates its contents), aligned instruction
-fetches are checked at both sides of a line boundary, and DCache cross-line
-writes are outside the implemented controller contract. Replacement is
-described as fill-age/age-based because cache hits do not update
-`one_set.v`'s age counters.
+Current RTL limitations are reflected rather than hidden: ICache now has an
+explicit flush input, but this legacy directed test ties it low and verifies
+reset invalidation; the active Cache UVM regression separately verifies the
+flush path. Aligned instruction fetches are checked at both sides of a line
+boundary, and DCache cross-line writes are outside the implemented controller
+contract. Replacement is described as fill-age/age-based because cache hits do
+not update `one_set.v`'s age counters.

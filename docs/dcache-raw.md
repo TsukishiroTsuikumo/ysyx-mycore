@@ -134,8 +134,8 @@ end
 
 | 文件 | 修改内容 |
 |------|----------|
-| [mem/Dcache.v](../mem/Dcache.v) | `cpu_wstrb_line`/`cpu_wdata_line` 在 IDLE 状态使用当前 `dm_req_*_in` |
-| [mem/one_set.v](../mem/one_set.v) | 复位时初始化 `line_time` 数组 |
+| [dut/mem/Dcache.v](../dut/mem/Dcache.v) | `cpu_wstrb_line`/`cpu_wdata_line` 在 IDLE 状态使用当前 `dm_req_*_in` |
+| [dut/mem/one_set.v](../dut/mem/one_set.v) | 复位时初始化 `line_time` 数组 |
 
 ## 验证结果
 

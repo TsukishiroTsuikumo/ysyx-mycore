@@ -14,13 +14,20 @@ stable `mycore.v` or colliding with the AXI/cache integration work.
 - `dut/mycore/mycore_dual.v`
 - `test_bench/dual_issue/dual_issue_core_tb.sv`
 - `test_bench/dual_issue/flist_dual.f`
+- `C_model/model.cpp`
+- `C_model/state.cpp`
+- `C_model/cmodel_dpi.cpp`
 
 The target is two-wide, in-order issue and two-wide, in-order retirement for
-RV32IM.  This phase does not add register renaming, a reorder buffer,
-out-of-order completion, speculative loads, exceptions, interrupts, CSR or an
-MMU.  FENCE/FENCE.I and SYSTEM/environment instructions are also outside this
-standalone core's contract because it has no architectural exception or device
-ordering subsystem.
+the documented RV32I integer/control/load-store subset plus RV32M arithmetic.
+This phase does not add register renaming, a reorder buffer, out-of-order
+completion, speculative loads, exceptions, interrupts, CSR or an MMU.
+FENCE is supported as a serialized, side-effect-free ordered retirement: the
+core already permits only one backend bundle and one outstanding data access,
+so no older access remains incomplete when it retires. FENCE.I/Zifencei and
+SYSTEM/environment instructions remain outside this standalone core's
+contract because it has no instruction-cache maintenance, architectural
+exception or device-ordering subsystem.
 
 `mycore_dual` currently uses one ordered backend bundle.  A non-memory bundle
 retires on the following edge; an LSU bundle holds the backend until its
@@ -45,16 +52,18 @@ non-pipelined ICache returns a hit approximately once every two cycles.  A
 second decoder or ALU behind that interface could only issue two instructions
 occasionally after the queue had accumulated work during a backend stall.
 
-The ICache already stores and refills 128-bit cache lines.  Phase 4 therefore
-returns the complete line to `fetch_frontend`:
+The ICache's 128-bit internal line width motivated the phase-4 frontend
+contract, which returns a complete line to `fetch_frontend`:
 
 ```text
 one 128-bit line / two hit cycles = four instructions / two cycles
                                     = two instructions per cycle
 ```
 
-A 64-bit response without a pipelined ICache would still average only one
-instruction per cycle and is not sufficient for phase-4 acceptance.
+A 64-bit response without a pipelined cache would still average only one
+instruction per cycle and is not sufficient for phase-4 acceptance. The
+current standalone dual integration drives this line contract from its
+instruction AXI adapter; it does not route through the stable ICache.
 
 Within a response, the word mapping is little-endian and matches the memory
 line representation:
@@ -75,7 +84,7 @@ line representation:
 | `3'd0` | `SIMPLE_INT` | RV32I OP, OP-IMM, LUI, AUIPC | May pair with another `SIMPLE_INT` |
 | `3'd1` | `MULDIV` | RV32M MUL/DIV/REM family | Lane 0, single issue |
 | `3'd2` | `LSU` | LOAD and STORE | Lane 0, single issue |
-| `3'd3` | `CONTROL` | BRANCH, JAL, JALR | Lane 0, single issue |
+| `3'd3` | `CONTROL` | BRANCH, JAL, JALR, FENCE | Lane 0, single issue |
 | `3'd4` | `INVALID` | Unsupported or illegal encoding | Never dual issue |
 
 These values must remain synchronized when the existing decoder is extended.
@@ -189,13 +198,20 @@ integer lane.  It implements:
 - all legal RV32I OP-IMM counterparts;
 - LUI and AUIPC;
 - BRANCH comparisons and target generation;
-- JAL and JALR link values and targets.
+- JAL and JALR link values and targets; and
+- FENCE classification as supported, serialized and side-effect-free.
 
 Only OP, OP-IMM, LUI and AUIPC assert `pairable_simple`.
 
+FENCE (`MISC-MEM`, `funct3=000`) asserts `supported` but produces no register
+result, redirect or memory request. Classifying it as `CONTROL` reuses the
+lane-0-only serialization rule. FENCE.I (`funct3=001`) stays unsupported.
+
 LOAD/STORE and RV32M are classified and expose accurate source/destination
-metadata, but do not assert `supported` or `result_valid`; the integrated full
-lane routes them to the existing LSU, multiplier and divider.
+metadata, but do not assert `supported` or `result_valid`. The standalone
+`mycore_dual` top serializes these classes through its lane-0 scalar LSU
+handshake and internal combinational RV32M result helper. Reusing the stable
+pipeline's existing execution units remains a later full-integration task.
 
 The decoder source-use contract is:
 
@@ -207,7 +223,7 @@ The decoder source-use contract is:
 | STORE | 1 | 1 |
 | BRANCH | 1 | 1 |
 | JALR | 1 | 0 |
-| JAL / LUI / AUIPC | 0 | 0 |
+| JAL / LUI / AUIPC / FENCE | 0 | 0 |
 
 JALR clears target bit zero as required by the ISA.  Misaligned-instruction
 exceptions are outside the current core scope.
@@ -281,29 +297,37 @@ The self-contained test can be built directly from the repository root:
 ```sh
 verilator --binary --timing --sv -Wall -Wno-fatal \
   --top-module dual_issue_core_tb \
+  -CFLAGS "-std=c++17 -I$(pwd)/C_model" \
   -f test_bench/dual_issue/flist_dual.f
 ./obj_dir/Vdual_issue_core_tb
 
 verilator --binary --timing --sv -Wall -Wno-fatal \
   --top-module dual_issue_core_tb -GISSUE_WIDTH=1 \
+  -CFLAGS "-std=c++17 -I$(pwd)/C_model" \
   -f test_bench/dual_issue/flist_dual.f
 ./obj_dir/Vdual_issue_core_tb
 ```
 
 Each run contains its own one-cycle ordered instruction-line memory, scalar
 data memory with a directed request/response backpressure mode, instruction
-encoders and retirement scoreboard.  It requires no
-UVM, DPI, external image or existing testbench finish condition.  The
-scoreboard compares lane 0 then lane 1 and checks PC, instruction, commit
-valid, destination and data for every retirement record.  Consequently a
-correct final register file alone is not enough to pass.
+encoders and retirement scoreboard.  It requires no UVM, external image or
+existing testbench finish condition, but `flist_dual.f` now compiles the DPI
+C++ model as an independent program oracle.  Before each directed program is
+launched, the model generates its ordered retirement trace, memory-access trace
+and final register/memory state.  The scoreboard compares lane 0 then lane 1,
+checks PC, instruction, commit-valid, destination and data for every retirement
+record, checks every accepted data-memory request, and finally compares all
+architectural registers and data-memory bytes.  Consequently a correct final
+register file alone is not enough to pass.
 
 ### Full integration acceptance target
 
 The following items remain the acceptance target for the later modification
-of the existing pipelined `mycore.v`.  In particular, the single-bundle
-standalone core cannot create the EX/MEM redirect-priority cases in items 4
-and 6, and its independent testbench intentionally has no DPI connection.
+of the existing pipelined `mycore.v`.  The standalone core now has DPI C-model
+differential checking, but its single-bundle backend cannot create the
+stage-specific EX/MEM redirect-priority cases of a widened stable pipeline.
+It also remains a separate top rather than a replacement for `mycore.v` or an
+integration through the stable ICache/DCache top.
 
 1. Independent ADDI/ADD/logic/shift pairs update architectural state through
    both lanes.
@@ -334,6 +358,8 @@ The self-contained test currently verifies:
 5. reserved LOAD/STORE `funct3` encodings that must not launch a data request;
 6. taken and not-taken branches, JAL/JALR links, a redirect coincident with an
    old-path line response, and both register and store wrong-path effects.
+7. a FENCE first observed in slot 1 remains queued, later issues alone in lane
+   0, retires alone, and launches no data-memory operation.
 
 The load/store trace detects a retirement pulse repeated while an LSU waits.
 The WAW trace requires two ordered commit records and checks the younger
@@ -341,10 +367,37 @@ lane-1 value wins the architectural write.  Width-1 and width-2 elaborations
 run the same expected traces and print a trace hash for external A/B
 comparison.
 
+The explicit semantic gate accumulates DUT-observed events across the directed
+programs.  Width 1 requires the single-issue and single-retire bins and also
+fatally rejects any lane-1 event.  Width 2 requires all 22 bins, covering issue
+and retirement widths, instruction classes, dependency/serialization cases,
+memory request and response stalls, control flow, and stale-response discard.
+The run and CI evidence is:
+
+```text
+REFERENCE_ORACLE PASS width=<1|2> test=<name> retired=<count> memory=<count>
+TRACE PASS width=<1|2> test=<name> retired=<count> hash=<hash>
+REFERENCE_STATE PASS width=<1|2> test=<name> regs=32 memory_bytes=1024
+DUAL_COVERAGE status=PASS width=1 required=2 hit=2 missing=0
+DUAL_COVERAGE status=PASS width=2 required=22 hit=22 missing=0
+DUAL_FENCE_ORDER_GATE PASS width=<1|2> retired_alone=1 no_side_effects=1
+DUAL ISSUE CORE PASS ISSUE_WIDTH=<1|2>
+```
+
+The testbench emits the oracle, trace, state, coverage and final records. CI
+derives `DUAL_FENCE_ORDER_GATE` only after uniquely matching the FENCE trace
+that the testbench has already checked for lane-0-only, side-effect-free
+retirement.
+
+The roadmap-branch CI requires the exact eight oracle/state records for each
+elaboration, isolates the FENCE trace and emits the derived FENCE order marker,
+diffs the normalized width-1/width-2 traces, and requires the coverage/final
+markers. A missing required record or non-zero test exit fails the job.
+
 ### Performance gate
 
 For at least 128 independent `SIMPLE_INT` instructions with no external
-backpressure, after warm-up:
+backpressure over the measured run:
 
 - dual-issue cycles are at least 80% of issue cycles;
 - measured IPC is at least 1.6;

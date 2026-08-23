@@ -124,8 +124,12 @@ wire is_jal_if = is_jal_id && instr_valid && valid[0] && !hzd_stall[1];
 
 原始失败用例修复后通过：
 
+```sh
+make image csrc/sb_loop_test.cpp IMAGE_TARGET=sb_loop_test_image.mem
+make run TEST=mem_image_test MEM_FILE=./csrc/image/sb_loop_test_image.mem
+```
+
 ```text
-make run TEST=mem_image_test MEM_FILE=./csrc/image/sb_loop_test.mem
 PROGRAM_SCORE PASS=5003 FAIL=0 MISSING=0 EXTRA=0
 ```
 
@@ -154,4 +158,6 @@ Summary:
   Failed Tests Count: 0
 ```
 
-最新完整regression脚本也已经跑通，说明该修复没有破坏现有core-only和program-image测试流程。
+The current blocking regression is `make regression`, which must report
+`Passed: 5  Failed: 0`; the six-entry block above is archived evidence from
+the original bug investigation.
