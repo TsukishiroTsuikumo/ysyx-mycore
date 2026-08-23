@@ -1,3 +1,5 @@
+SHELL               := /bin/bash
+
 TB_TOP    			:= test_bench
 OBJ_DIR   			:= obj_dir
 VERILATOR 			:= verilator
@@ -58,16 +60,19 @@ C_MODEL_FLAGS 		:= -std=c++17 -Wall -Wextra -I $(C_MODEL_DIR)
 
 LOG ?=
 COVERAGE ?= 0
+COVERAGE_FILE ?= $(OBJ_DIR)/coverage.dat
 
 ifeq ($(COVERAGE),1)
 VERILATOR_FLAGS += --coverage --coverage-line --coverage-toggle
-RUN_ARGS += +verilator+coverage+file+$(OBJ_DIR)/coverage.dat
+RUN_ARGS += +verilator+coverage+file+$(COVERAGE_FILE)
 endif
 
 
 
-run: build
-	VERILATOR_SOLVER="$(VERILATOR_SOLVER)" ./$(OBJ_DIR)/V$(TB_TOP) $(RUN_ARGS) 2>&1 $(if $(LOG),| tee $(LOG))
+run: build run-only
+
+run-only:
+	set -o pipefail; VERILATOR_SOLVER="$(VERILATOR_SOLVER)" ./$(OBJ_DIR)/V$(TB_TOP) $(RUN_ARGS) 2>&1 $(if $(LOG),| tee $(LOG))
 
 build:
 	$(VERILATOR) $(VERILATOR_FLAGS)
@@ -83,7 +88,7 @@ checksv:
 	$(VERILATOR) -sv --lint-only -Wall -f flistsv.f
 
 clean:
-	rm -rf $(OBJ_DIR) *.vcd *.fst *.log $(C_MODEL_BIN) $(C_MODEL_DIR)/cmodel_tests
+	rm -rf $(OBJ_DIR) coverage *.vcd *.fst *.log $(C_MODEL_BIN) $(C_MODEL_DIR)/cmodel_tests
 
 cmodel:
 	$(CXX) $(C_MODEL_FLAGS) $(C_MODEL_SRCS) -o $(C_MODEL_BIN)
@@ -97,9 +102,10 @@ regression:
 
 coverage:
 	python3 scripts/regression.py --coverage
-	verilator_coverage --write-info $(OBJ_DIR)/coverage.info $(OBJ_DIR)/coverage.dat
+	verilator_coverage --write-info $(OBJ_DIR)/coverage.info coverage/*.dat
 
 image:
+	mkdir -p $(IMAGE_DIR)
 	riscv64-unknown-elf-gcc \
 		./scripts/start.S \
 		$(IMAGE_SRC) \
@@ -108,8 +114,8 @@ image:
 		-Wl,-T,./scripts/linker.ld \
 		-o $(IMAGE_DIR)/test.elf
 	riscv64-unknown-elf-objcopy -O binary $(IMAGE_DIR)/test.elf $(IMAGE_DIR)/test.bin
-	mkdir -p $(dir $(IMAGE_TARGET))
+	mkdir -p $(IMAGE_DIR)/$(dir $(IMAGE_TARGET))
 	xxd -e -g 4 -c 4 $(IMAGE_DIR)/test.bin | awk '{print $$2}' > $(IMAGE_DIR)/$(IMAGE_TARGET)
 	rm -f $(IMAGE_DIR)/test.elf $(IMAGE_DIR)/test.bin
 
-.PHONY: build run clean image cmodel cmodel-test regression coverage checkv checksv
+.PHONY: build run run-only clean image cmodel cmodel-test regression coverage checkv checksv

@@ -18,6 +18,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 IMAGE_DIR = ROOT / "csrc" / "image"
 LOG_DIR = ROOT / "log"
+COVERAGE_DIR = ROOT / "coverage"
 
 
 @dataclass(frozen=True)
@@ -37,7 +38,7 @@ def compile_image(cpp_file: Path) -> Path | None:
         "make",
         "image",
         str(cpp_file),
-        f"IMAGE_TARGET={image}",
+        f"IMAGE_TARGET={image.name}",
     ])
     return image if result.returncode == 0 and image.exists() else None
 
@@ -46,15 +47,34 @@ def run_test(image: Path, coverage: bool) -> tuple[int, Path]:
     log_file = LOG_DIR / f"{image.stem}.log"
     command = [
         "make",
-        "run",
+        "run-only",
         "TEST=mem_image_test",
         f"MEM_FILE={image}",
         f"LOG={log_file}",
     ]
     if coverage:
-        command.append("COVERAGE=1")
+        coverage_file = COVERAGE_DIR / f"{image.stem}.dat"
+        command.extend(["COVERAGE=1", f"COVERAGE_FILE={coverage_file}"])
     result = run(command)
     return result.returncode, log_file
+
+
+def build_simulator(coverage: bool) -> int:
+    command = ["make", "build"]
+    if coverage:
+        command.append("COVERAGE=1")
+    return run(command).returncode
+
+
+def is_error_line(line: str) -> bool:
+    stripped = line.strip()
+    if re.fullmatch(r"UVM_(?:ERROR|FATAL)\s*:\s*0", stripped):
+        return False
+    return bool(
+        re.search(r"\b(?:UVM_ERROR|UVM_FATAL)\b", line)
+        or re.search(r"^\s*%Error\b", line)
+        or "SIM_TIMEOUT:" in line
+    )
 
 
 def parse_log(log_file: Path, simulator_status: int) -> TestResult:
@@ -66,7 +86,7 @@ def parse_log(log_file: Path, simulator_status: int) -> TestResult:
         (
             f"line {line_no}: {line.strip()}"
             for line_no, line in enumerate(lines, start=1)
-            if re.search(r"\b(UVM_ERROR|UVM_FATAL|%Error|SIM_TIMEOUT)\b", line)
+            if is_error_line(line)
         ),
         None,
     )
@@ -74,7 +94,15 @@ def parse_log(log_file: Path, simulator_status: int) -> TestResult:
         (line.strip() for line in reversed(lines) if "PROGRAM_SCORE" in line and "PASS=" in line),
         None,
     )
-    score_failed = score_line is None or not re.search(r"FAIL=0\s+MISSING=0\s+EXTRA=0", score_line)
+    score_match = re.search(
+        r"PASS=(\d+)\s+FAIL=(\d+)\s+MISSING=(\d+)\s+EXTRA=(\d+)",
+        score_line or "",
+    )
+    score_failed = (
+        score_match is None
+        or int(score_match.group(1)) == 0
+        or any(int(score_match.group(index)) != 0 for index in range(2, 5))
+    )
 
     if simulator_status != 0:
         return TestResult(log_file.stem, False, first_error or f"simulator exit={simulator_status}")
@@ -100,11 +128,14 @@ def main() -> int:
     parser.add_argument("--coverage", action="store_true", help="build with Verilator coverage")
     args = parser.parse_args()
 
-    IMAGE_DIR.mkdir(parents=True, exist_ok=True)
-    LOG_DIR.mkdir(parents=True, exist_ok=True)
     if not args.no_clean and run(["make", "clean"]).returncode != 0:
         print("ERROR: make clean failed", file=sys.stderr)
         return 2
+
+    IMAGE_DIR.mkdir(parents=True, exist_ok=True)
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    if args.coverage:
+        COVERAGE_DIR.mkdir(parents=True, exist_ok=True)
 
     sources = discover_sources(args.sources)
     if not sources:
@@ -121,9 +152,16 @@ def main() -> int:
             images.append(image)
 
     results: list[TestResult] = []
-    for image in images:
-        status, log_file = run_test(image, args.coverage)
-        results.append(parse_log(log_file, status))
+    if images:
+        simulator_status = build_simulator(args.coverage)
+        if simulator_status != 0:
+            results.append(
+                TestResult("simulator_build", False, f"build exit={simulator_status}")
+            )
+        else:
+            for image in images:
+                status, log_file = run_test(image, args.coverage)
+                results.append(parse_log(log_file, status))
 
     for source in build_failures:
         results.append(TestResult(Path(source).stem, False, "image compilation failed"))
