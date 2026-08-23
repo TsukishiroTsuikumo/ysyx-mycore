@@ -262,14 +262,57 @@ module dual_issue_core_tb #(
         end
     end
 
+    reg dm_read_stalled_q;
+    reg dm_write_stalled_q;
+    reg [31:0] dm_stalled_addr_q;
+    reg [3:0] dm_stalled_wstrb_q;
+    reg [31:0] dm_stalled_wdata_q;
+    integer dm_request_stall_count;
+    always @(posedge clk or posedge reset) begin
+        if (reset) begin
+            dm_read_stalled_q <= 1'b0;
+            dm_write_stalled_q <= 1'b0;
+            dm_stalled_addr_q <= 32'b0;
+            dm_stalled_wstrb_q <= 4'b0;
+            dm_stalled_wdata_q <= 32'b0;
+            dm_request_stall_count <= 0;
+        end
+        else begin
+            if (dm_read_stalled_q &&
+                (!dm_req_rvalid || (dm_req_addr !== dm_stalled_addr_q)))
+                $fatal(1, "%s: read request changed while backpressured",
+                       active_test);
+            if (dm_write_stalled_q &&
+                (!dm_req_wvalid || (dm_req_addr !== dm_stalled_addr_q) ||
+                 (dm_req_wstrb !== dm_stalled_wstrb_q) ||
+                 (dm_req_wdata !== dm_stalled_wdata_q)))
+                $fatal(1, "%s: write request changed while backpressured",
+                       active_test);
+
+            dm_read_stalled_q <= dm_req_rvalid && !dm_req_rready;
+            dm_write_stalled_q <= dm_req_wvalid && !dm_req_wready;
+            if ((dm_req_rvalid && !dm_req_rready) ||
+                (dm_req_wvalid && !dm_req_wready))
+                dm_request_stall_count <= dm_request_stall_count + 1;
+            if ((dm_req_rvalid && !dm_req_rready) ||
+                (dm_req_wvalid && !dm_req_wready)) begin
+                dm_stalled_addr_q <= dm_req_addr;
+                dm_stalled_wstrb_q <= dm_req_wstrb;
+                dm_stalled_wdata_q <= dm_req_wdata;
+            end
+        end
+    end
+
     // ------------------------------------------------------------
-    // One-cycle scalar data memory
+    // Scalar data memory with an optional directed backpressure mode
     // ------------------------------------------------------------
 
     reg [7:0] dmem [0:DMEM_BYTES-1];
     reg dm_pending_read;
     reg dm_pending_write;
     reg [31:0] dm_pending_addr;
+    reg [2:0] dm_response_countdown;
+    reg dm_backpressure_enable;
     integer dmem_byte;
     integer dm_read_handshake_count;
     integer dm_write_handshake_count;
@@ -288,10 +331,16 @@ module dual_issue_core_tb #(
         end
     endfunction
 
-    assign dm_req_rready = !reset && !dm_pending_read && !dm_pending_write;
-    assign dm_req_wready = !reset && !dm_pending_read && !dm_pending_write;
-    assign dm_resp_rvalid = dm_pending_read;
-    assign dm_resp_wvalid = dm_pending_write;
+    wire dm_accept_window = !dm_backpressure_enable ||
+                            (perf_cycle_count[2:0] == 3'b101);
+    assign dm_req_rready = !reset && !dm_pending_read &&
+                           !dm_pending_write && dm_accept_window;
+    assign dm_req_wready = !reset && !dm_pending_read &&
+                           !dm_pending_write && dm_accept_window;
+    assign dm_resp_rvalid = dm_pending_read &&
+                            (dm_response_countdown == 3'd0);
+    assign dm_resp_wvalid = dm_pending_write &&
+                            (dm_response_countdown == 3'd0);
     assign dm_resp_rdata = read_dmem_word(dm_pending_addr);
 
     always @(posedge clk or posedge reset) begin
@@ -299,6 +348,7 @@ module dual_issue_core_tb #(
             dm_pending_read <= 1'b0;
             dm_pending_write <= 1'b0;
             dm_pending_addr <= 32'b0;
+            dm_response_countdown <= 3'd0;
             dm_read_handshake_count <= 0;
             dm_write_handshake_count <= 0;
             for (dmem_byte = 0; dmem_byte < DMEM_BYTES;
@@ -306,18 +356,26 @@ module dual_issue_core_tb #(
                 dmem[dmem_byte] <= 8'b0;
         end
         else begin
-            dm_pending_read <= 1'b0;
-            dm_pending_write <= 1'b0;
+            if (dm_pending_read || dm_pending_write) begin
+                if (dm_response_countdown != 3'd0)
+                    dm_response_countdown <= dm_response_countdown - 1'b1;
+                else begin
+                    dm_pending_read <= 1'b0;
+                    dm_pending_write <= 1'b0;
+                end
+            end
 
             if (dm_req_rvalid && dm_req_rready) begin
                 dm_pending_read <= 1'b1;
                 dm_pending_addr <= dm_req_addr;
+                dm_response_countdown <= dm_backpressure_enable ? 3'd4 : 3'd0;
                 dm_read_handshake_count <= dm_read_handshake_count + 1;
             end
 
             if (dm_req_wvalid && dm_req_wready) begin
                 dm_pending_write <= 1'b1;
                 dm_pending_addr <= dm_req_addr;
+                dm_response_countdown <= dm_backpressure_enable ? 3'd4 : 3'd0;
                 dm_write_handshake_count <= dm_write_handshake_count + 1;
                 for (dmem_byte = 0; dmem_byte < 4;
                      dmem_byte = dmem_byte + 1) begin
@@ -539,6 +597,7 @@ module dual_issue_core_tb #(
             saw_waw_dual = 1'b0;
             saw_war_dual = 1'b0;
             saw_x0_dual = 1'b0;
+            dm_backpressure_enable = 1'b0;
 
             for (clear_index = 0; clear_index < IMEM_WORDS;
                  clear_index = clear_index + 1)
@@ -579,6 +638,7 @@ module dual_issue_core_tb #(
         begin
             trace_enable = 1'b0;
             @(negedge clk);
+            #1;
             reset = 1'b1;
             repeat (2) @(posedge clk);
         end
@@ -781,6 +841,7 @@ module dual_issue_core_tb #(
         reg [31:0] instruction;
         begin
             begin_test("load-store");
+            dm_backpressure_enable = 1'b1;
             instruction = insn_addi(5'd1, 5'd0, 32'sd64);
             append_expected(0, instruction, 1'b1, 5'd1, 32'd64);
             instruction = insn_addi(5'd2, 5'd0, -32'sd1);
@@ -816,6 +877,10 @@ module dual_issue_core_tb #(
             if (dm_read_handshake_count != 5)
                 $fatal(1, "load-store: got %0d reads, expected 5",
                        dm_read_handshake_count);
+            if (dm_request_stall_count == 0)
+                $fatal(1, "load-store: request backpressure was not exercised");
+            if (perf_memory_stall_cycle_count < 8)
+                $fatal(1, "load-store: delayed responses were not exercised");
             if ((dmem[64] !== 8'hff) || (dmem[66] !== 8'hff) ||
                 (dmem[67] !== 8'hff) || (dmem[68] !== 8'hff) ||
                 (dmem[69] !== 8'hff) || (dmem[70] !== 8'hff) ||

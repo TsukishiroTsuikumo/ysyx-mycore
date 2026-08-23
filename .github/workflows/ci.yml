@@ -108,3 +108,47 @@ jobs:
           test -n "$width2_cycles"
           test "$width2_cycles" -lt "$width1_cycles"
           test $((width2_cycles * 4)) -le $((width1_cycles * 3))
+
+  dual-axi-integration:
+    name: Dual-issue cache/AXI integration
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    container:
+      image: verilator/verilator:v5.050
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Build and run dual-issue AXI integration smoke
+        run: |
+          set -o pipefail
+          verilator --binary --timing -sv -Wall -Wno-fatal \
+            --top-module dual_axi_smoke_tb \
+            --Mdir obj_dir_dual_axi \
+            -f test_bench/dual_issue/flist_dual_axi.f
+          ./obj_dir_dual_axi/Vdual_axi_smoke_tb | tee dual-axi.log
+          grep -Fq 'DUAL_AXI_INTEGRATION PASS' dual-axi.log
+
+  ooo-rtl:
+    name: Bounded out-of-order core
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    container:
+      image: verilator/verilator:v5.050
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Build and run out-of-order core acceptance test
+        run: |
+          set -o pipefail
+          verilator --binary -sv -Wall -Wno-fatal \
+            --top-module ooo_core_tb --Mdir obj_dir_ooo -f flist_ooo.f
+          ./obj_dir_ooo/Vooo_core_tb | tee ooo-core.log
+          grep -Fq 'OOO_CORE_TEST PASS' ooo-core.log

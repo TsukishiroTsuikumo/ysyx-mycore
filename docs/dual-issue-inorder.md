@@ -18,7 +18,9 @@ stable `mycore.v` or colliding with the AXI/cache integration work.
 The target is two-wide, in-order issue and two-wide, in-order retirement for
 RV32IM.  This phase does not add register renaming, a reorder buffer,
 out-of-order completion, speculative loads, exceptions, interrupts, CSR or an
-MMU.
+MMU.  FENCE/FENCE.I and SYSTEM/environment instructions are also outside this
+standalone core's contract because it has no architectural exception or device
+ordering subsystem.
 
 `mycore_dual` currently uses one ordered backend bundle.  A non-memory bundle
 retires on the following edge; an LSU bundle holds the backend until its
@@ -289,7 +291,8 @@ verilator --binary --timing --sv -Wall -Wno-fatal \
 ```
 
 Each run contains its own one-cycle ordered instruction-line memory, scalar
-data memory, instruction encoders and retirement scoreboard.  It requires no
+data memory with a directed request/response backpressure mode, instruction
+encoders and retirement scoreboard.  It requires no
 UVM, DPI, external image or existing testbench finish condition.  The
 scoreboard compares lane 0 then lane 1 and checks PC, instruction, commit
 valid, destination and data for every retirement record.  Consequently a
