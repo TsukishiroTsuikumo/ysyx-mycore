@@ -1,0 +1,40 @@
+name: UVM elaboration
+
+on:
+  push:
+    branches:
+      - codex/complete-readme-roadmap
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verilator-uvm-build:
+    name: Verilator/UVM build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    container:
+      image: verilator/verilator:v5.050
+    env:
+      UVM_HOME: ${{ github.workspace }}/.ci/uvm-core
+    steps:
+      - name: Check out core repository
+        uses: actions/checkout@v4
+
+      - name: Check out Accellera UVM 2020.3.1
+        uses: actions/checkout@v4
+        with:
+          repository: accellera-official/uvm-core
+          ref: 2020.3.1
+          path: .ci/uvm-core
+
+      - name: Report tool versions
+        run: |
+          verilator --version
+          g++ --version
+          make --version
+
+      - name: Elaborate and build the UVM testbench
+        run: make build
