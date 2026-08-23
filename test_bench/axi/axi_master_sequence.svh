@@ -170,25 +170,27 @@ class axi_master_sequence #(
         txn_t item;
         bit [DATA_WIDTH-1:0] expected_data_q[$];
         bit [DATA_WIDTH-1:0] expected_base;
+        bit [ADDR_WIDTH-1:0] random_addr;
+        bit [ID_WIDTH-1:0] random_id;
+        bit [OWNER_WIDTH-1:0] random_owner;
+        int unsigned address_delay;
+        int unsigned beat_delay;
+        int unsigned response_delay;
 
         item = txn_t::type_id::create("random_read_item");
         start_item(item);
-        if (!item.randomize() with {
-            addr inside {[32'h0000_0300:32'h0000_03f0]};
-            addr[3:0] == 4'b0000;
-            id inside {0, 1};
-            owner == id[0];
-            address_delay_cycles inside {[0:3]};
-            beat_delay_cycles inside {[0:3]};
-            response_ready_delay_cycles inside {[1:4]};
-        }) begin
-            `uvm_fatal("AXI_MASTER_SEQ",
-                "Failed to randomize bounded cache-line read")
-        end
-        configure_line_item(item, AXI_READ, item.addr, item.id, item.owner,
-                            item.address_delay_cycles,
-                            item.beat_delay_cycles,
-                            item.response_ready_delay_cycles);
+        // Generate random values inside explicit legal bounds without relying
+        // on an external SAT solver.  This keeps the regression runnable in
+        // the stock Verilator container while retaining randomized traffic.
+        random_addr = 32'h0000_0300 + ($urandom_range(15, 0) << 4);
+        random_id = $urandom_range(1, 0);
+        random_owner = random_id[0];
+        address_delay = $urandom_range(3, 0);
+        beat_delay = $urandom_range(3, 0);
+        response_delay = $urandom_range(4, 1);
+        configure_line_item(item, AXI_READ, random_addr, random_id,
+                            random_owner, address_delay, beat_delay,
+                            response_delay);
         finish_item(item);
 
         expected_base = INITIAL_DATA_TAG + (item.addr >> 2);

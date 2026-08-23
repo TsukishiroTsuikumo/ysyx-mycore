@@ -75,9 +75,9 @@ jobs:
             "$UVM_HOME/src/uvm_pkg.sv" \
             -f test_bench/axi/flist_axi_master_uvm.f \
             +define+UVM_NO_DPI
-          VERILATOR_SOLVER="z3 --in" \
-            ./obj_dir_axi_uvm/Vaxi_master_uvm_tb \
-            +UVM_TESTNAME=axi_master_test 2>&1 | tee log/axi-active-uvm.log
+          ./obj_dir_axi_uvm/Vaxi_master_uvm_tb \
+            +UVM_TESTNAME=axi_master_test \
+            +verilator+seed+20260823 2>&1 | tee log/axi-active-uvm.log
           grep -Eq 'AXI_ACTIVE_UVM_TEST.*PASS transactions=19 checks=58 reads=13 writes=6' \
             log/axi-active-uvm.log
           grep -Eq 'AXI_ACCEPTANCE.*status=PASS.*unexpected_response_errors=0.*expected_read_error_ok=1.*expected_write_error_ok=1.*partial_write_ok=1' \
