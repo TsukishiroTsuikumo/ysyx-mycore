@@ -354,6 +354,16 @@ module dual_issue_core_tb #(
     reg saw_x0_dual;
     reg saw_redirect_with_response;
 
+    // redirect_fire is combinational from the FIFO head and is consumed on
+    // the rising edge.  Sample it in that same active region; by the following
+    // falling edge the redirect has already cleared the frontend outputs.
+    always @(posedge clk or posedge reset) begin
+        if (reset)
+            saw_redirect_with_response <= 1'b0;
+        else if (dut.redirect_fire && pm_resp_valid)
+            saw_redirect_with_response <= 1'b1;
+    end
+
     task automatic append_expected(
         input integer word_index,
         input [31:0] instruction,
@@ -453,9 +463,6 @@ module dual_issue_core_tb #(
             if (pm_req_valid && (pm_req_addr[3:0] != 4'b0000))
                 $fatal(1, "%s: unaligned line request %08x",
                        active_test, pm_req_addr);
-            if (dut.redirect_fire && pm_resp_valid)
-                saw_redirect_with_response = 1'b1;
-
             if ((retire_valid == 2'b11) &&
                 (retire_pc[0] == 32'h0000_0000) &&
                 (retire_pc[1] == 32'h0000_0004)) begin
@@ -530,7 +537,6 @@ module dual_issue_core_tb #(
             saw_waw_dual = 1'b0;
             saw_war_dual = 1'b0;
             saw_x0_dual = 1'b0;
-            saw_redirect_with_response = 1'b0;
 
             for (clear_index = 0; clear_index < IMEM_WORDS;
                  clear_index = clear_index + 1)

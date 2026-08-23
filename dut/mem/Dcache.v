@@ -414,10 +414,10 @@ module Dcache #(
             end
 
             CROSSLINE: begin
-                // CROSSLINE acts like IDLE for the line2 address
-                if (selected_miss_need_wb && !mem_req_sent) begin
-                    // Capture writeback data for line2
-                end
+                // Preserve the second-line address selected by the common
+                // defaults above.  Keep this case non-empty: coverage-enabled
+                // Verilator FSM detection rejects an empty optimized branch.
+                dc_req_raddr = line2_addr;
             end
 
             default: begin

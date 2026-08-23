@@ -63,7 +63,7 @@ COVERAGE ?= 0
 COVERAGE_FILE ?= $(OBJ_DIR)/coverage.dat
 
 ifeq ($(COVERAGE),1)
-VERILATOR_FLAGS += --coverage --coverage-line --coverage-toggle
+VERILATOR_FLAGS += --coverage-line --coverage-toggle
 RUN_ARGS += +verilator+coverage+file+$(COVERAGE_FILE)
 endif
 
