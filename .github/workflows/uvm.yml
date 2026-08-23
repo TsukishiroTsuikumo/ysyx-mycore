@@ -38,3 +38,24 @@ jobs:
 
       - name: Elaborate and build the UVM testbench
         run: make build
+
+      - name: Run cache, AXI, and differential smoke test
+        run: |
+          mkdir -p log
+          make run-only \
+            TEST=mem_image_test \
+            MEM_FILE=test_bench/programs/axi_smoke.mem \
+            TARGET_COMMITS=32 \
+            TIMEOUT_CYCLES=20000 \
+            SIM_TIMEOUT=50000 \
+            LOG=log/axi-smoke.log
+
+      - name: Enforce smoke-test acceptance markers
+        run: |
+          grep -Eq 'PROGRAM_SCORE.*PASS=[1-9][0-9]* FAIL=0 MISSING=0 EXTRA=0' log/axi-smoke.log
+          grep -Eq 'AXI_ACCEPTANCE.*status=PASS' log/axi-smoke.log
+          grep -Eq 'AXI_PROTOCOL_REPORT:.*procedural_errors=0' log/axi-smoke.log
+          if grep -Eq 'UVM_(ERROR|FATAL)[[:space:]]*:[[:space:]]*[1-9]' log/axi-smoke.log; then
+            echo 'UVM reported errors or fatals'
+            exit 1
+          fi

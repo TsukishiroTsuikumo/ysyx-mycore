@@ -23,6 +23,7 @@
 !*.yml
 !*.yaml
 !.gitignore
+!test_bench/programs/*.mem
 
 /obj_dir/
 /coverage/
