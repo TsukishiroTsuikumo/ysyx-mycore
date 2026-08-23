@@ -49,7 +49,9 @@ module axi_master_uvm_tb;
         .SEED       (32'h1ace_b00c),
         .ENABLE_ERROR_RESPONSES (1'b1),
         .ERROR_ADDR (32'h0000_0800),
-        .ERROR_RESP (2'b10)
+        .ERROR_RESP (2'b10),
+        .SLVERR_ADDR (32'h0000_0800),
+        .DECERR_ADDR (32'h0000_0900)
     ) slave (
         .clk           (clk),
         .reset         (reset),

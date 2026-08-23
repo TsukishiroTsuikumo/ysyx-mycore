@@ -143,12 +143,21 @@ class axi_driver #(
     endtask
 
     task collect_b(txn_t item);
-        do @(posedge vif.aclk); while (!vif.bvalid);
-        wait_driver_cycles(item.response_ready_delay_cycles);
-
-        @(negedge vif.aclk);
-        vif.bready <= 1'b1;
-        do @(posedge vif.aclk); while (!vif.bvalid);
+        // A configured zero delay means READY is already asserted by
+        // drive_write before the response can arrive.  For a non-zero delay,
+        // count the first observed VALID cycle as cycle one, then assert READY
+        // after exactly the requested number of stalled cycles.
+        if (item.response_ready_delay_cycles == 0) begin
+            do @(posedge vif.aclk); while (!vif.bvalid);
+        end
+        else begin
+            do @(posedge vif.aclk); while (!vif.bvalid);
+            if (item.response_ready_delay_cycles > 1)
+                wait_driver_cycles(item.response_ready_delay_cycles - 1);
+            @(negedge vif.aclk);
+            vif.bready <= 1'b1;
+            do @(posedge vif.aclk); while (!vif.bvalid);
+        end
 
         item.bresp = vif.bresp;
         item.buser = vif.buser;
@@ -190,12 +199,19 @@ class axi_driver #(
 
         item.clear_payload();
         for (beat = 0; beat < item.expected_beats(); beat++) begin
-            do @(posedge vif.aclk); while (!vif.rvalid);
-            wait_driver_cycles(item.response_ready_delay_cycles);
-
-            @(negedge vif.aclk);
-            vif.rready <= 1'b1;
-            do @(posedge vif.aclk); while (!vif.rvalid);
+            if (item.response_ready_delay_cycles == 0) begin
+                // drive_read asserted RREADY before AR; keep it asserted for
+                // the complete burst so a zero setting creates zero stalls.
+                do @(posedge vif.aclk); while (!vif.rvalid);
+            end
+            else begin
+                do @(posedge vif.aclk); while (!vif.rvalid);
+                if (item.response_ready_delay_cycles > 1)
+                    wait_driver_cycles(item.response_ready_delay_cycles - 1);
+                @(negedge vif.aclk);
+                vif.rready <= 1'b1;
+                do @(posedge vif.aclk); while (!vif.rvalid);
+            end
 
             expected_last = (beat == (item.expected_beats() - 1));
             item.data_q.push_back(vif.rdata);
@@ -214,6 +230,13 @@ class axi_driver #(
                     beat, expected_last, vif.rlast))
             end
 
+            if (item.response_ready_delay_cycles != 0) begin
+                @(negedge vif.aclk);
+                vif.rready <= 1'b0;
+            end
+        end
+
+        if (item.response_ready_delay_cycles == 0) begin
             @(negedge vif.aclk);
             vif.rready <= 1'b0;
         end
@@ -237,6 +260,10 @@ class axi_driver #(
                 item.expected_beats(), item.data_user_q.size()))
         end
 
+        if (item.response_ready_delay_cycles == 0) begin
+            @(negedge vif.aclk);
+            vif.bready <= 1'b1;
+        end
         drive_aw(item);
         drive_w(item);
         collect_b(item);
@@ -244,6 +271,10 @@ class axi_driver #(
     endtask
 
     task drive_read(txn_t item);
+        if (item.response_ready_delay_cycles == 0) begin
+            @(negedge vif.aclk);
+            vif.rready <= 1'b1;
+        end
         drive_ar(item);
         collect_r(item);
         completed_read_count++;

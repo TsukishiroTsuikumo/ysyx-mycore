@@ -1,0 +1,66 @@
+name: Source-program differential regression
+
+on:
+  push:
+    branches:
+      - main
+      - codex/complete-readme-roadmap
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-program-regression:
+    name: Compile and differentially execute all csrc programs
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    container:
+      image: verilator/verilator:v5.050
+    defaults:
+      run:
+        shell: bash
+    env:
+      UVM_HOME: ${{ github.workspace }}/.ci/uvm-core
+    steps:
+      - name: Check out core repository
+        uses: actions/checkout@v4
+
+      - name: Check out Accellera UVM 2020.3.1
+        uses: actions/checkout@v4
+        with:
+          repository: accellera-official/uvm-core
+          ref: 2020.3.1
+          path: .ci/uvm-core
+
+      - name: Install the RV32IM cross toolchain
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            --no-install-recommends \
+            gcc-riscv64-unknown-elf \
+            binutils-riscv64-unknown-elf \
+            xxd
+
+      - name: Report pinned tool versions
+        run: |
+          verilator --version
+          riscv64-unknown-elf-gcc --version | head -1
+          g++ --version | head -1
+
+      - name: Build and run every source-program differential test
+        run: |
+          set -o pipefail
+          make regression 2>&1 | tee source-regression.log
+          grep -Fq 'Passed: 5  Failed: 0' source-regression.log
+
+      - name: Upload source-regression evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: source-program-regression
+          path: |
+            source-regression.log
+            log/*.log
+            csrc/image/*_image.mem
+          if-no-files-found: error

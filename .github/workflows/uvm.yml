@@ -3,6 +3,7 @@ name: UVM regression and coverage
 on:
   push:
     branches:
+      - main
       - codex/complete-readme-roadmap
   pull_request:
   workflow_dispatch:
@@ -72,7 +73,7 @@ jobs:
             COVERAGE_FILE=obj_dir/coverage-rv32im.dat \
             TEST=mem_image_test \
             MEM_FILE=test_bench/programs/rv32im_coverage.mem \
-            TARGET_COMMITS=66 \
+            TARGET_COMMITS=67 \
             REQUIRE_ISA_COVERAGE=1 \
             TIMEOUT_CYCLES=30000 \
             SIM_TIMEOUT=100000 \
@@ -83,7 +84,7 @@ jobs:
           grep -Eq 'PROGRAM_SCORE.*PASS=[1-9][0-9]* FAIL=0 MISSING=0 EXTRA=0' \
             log/rv32im-coverage.log
           grep -Fq \
-            'ISA_COVERAGE status=PASS required=57 hit=57 missing=0 instr=45/45 branch=12/12' \
+            'ISA_COVERAGE status=PASS required=58 hit=58 missing=0 instr=46/46 branch=12/12' \
             log/rv32im-coverage.log
           if grep -Eq 'UVM_(ERROR|FATAL)[[:space:]]*:[[:space:]]*[1-9]' \
             log/rv32im-coverage.log; then
@@ -91,9 +92,8 @@ jobs:
             exit 1
           fi
 
-      - name: Build and run active AXI UVM master smoke
+      - name: Build active AXI UVM master testbench
         run: |
-          set -o pipefail
           verilator --binary --timing -sv -Wall -Wno-fatal --assert -j 0 \
             --top-module axi_master_uvm_tb \
             --Mdir obj_dir_axi_uvm \
@@ -102,6 +102,10 @@ jobs:
             "$UVM_HOME/src/uvm_pkg.sv" \
             -f test_bench/axi/flist_axi_master_uvm.f \
             +define+UVM_NO_DPI
+
+      - name: Run directed active AXI UVM gate
+        run: |
+          set -o pipefail
           ./obj_dir_axi_uvm/Vaxi_master_uvm_tb \
             +UVM_TESTNAME=axi_master_test \
             +verilator+seed+20260823 2>&1 | tee log/axi-active-uvm.log
@@ -114,6 +118,52 @@ jobs:
           if grep -Eq 'UVM_(ERROR|FATAL)[[:space:]]*:[[:space:]]*[1-9]' \
             log/axi-active-uvm.log; then
             echo 'Active AXI UVM test reported errors or fatals'
+            exit 1
+          fi
+
+      - name: Run reproducible AXI random stress seed 13579bdf
+        run: |
+          set -o pipefail
+          ./obj_dir_axi_uvm/Vaxi_master_uvm_tb \
+            +UVM_TESTNAME=axi_random_stress_test \
+            +AXI_RANDOM_SEED=13579bdf \
+            +verilator+seed+20260824 2>&1 | tee log/axi-random-13579bdf.log
+          grep -Fq \
+            'AXI_RANDOM_COVERAGE status=PASS seed=0x13579bdf txns=64 reads=32 writes=32 unique_okay_writes=30 paired_readbacks=30 error_write_unchanged=2' \
+            log/axi-random-13579bdf.log
+          grep -Fq \
+            'AXI_ERROR_RESPONSE_COVERAGE status=PASS read_slverr=1 read_decerr=1 write_slverr=1 write_decerr=1 protocol_errors=0' \
+            log/axi-random-13579bdf.log
+          grep -Eq 'AXI_RANDOM_UVM_TEST.*PASS' log/axi-random-13579bdf.log
+          grep -Eq \
+            'AXI_PROTOCOL_REPORT:.*procedural_errors=0.*pending_aw=0.*pending_w=0.*pending_b=0.*pending_r=0' \
+            log/axi-random-13579bdf.log
+          if grep -Eq 'UVM_(ERROR|FATAL)[[:space:]]*:[[:space:]]*[1-9]' \
+            log/axi-random-13579bdf.log; then
+            echo 'AXI random seed 13579bdf reported errors or fatals'
+            exit 1
+          fi
+
+      - name: Run reproducible AXI random stress seed 2468ace1
+        run: |
+          set -o pipefail
+          ./obj_dir_axi_uvm/Vaxi_master_uvm_tb \
+            +UVM_TESTNAME=axi_random_stress_test \
+            +AXI_RANDOM_SEED=2468ace1 \
+            +verilator+seed+20260825 2>&1 | tee log/axi-random-2468ace1.log
+          grep -Fq \
+            'AXI_RANDOM_COVERAGE status=PASS seed=0x2468ace1 txns=64 reads=32 writes=32 unique_okay_writes=30 paired_readbacks=30 error_write_unchanged=2' \
+            log/axi-random-2468ace1.log
+          grep -Fq \
+            'AXI_ERROR_RESPONSE_COVERAGE status=PASS read_slverr=1 read_decerr=1 write_slverr=1 write_decerr=1 protocol_errors=0' \
+            log/axi-random-2468ace1.log
+          grep -Eq 'AXI_RANDOM_UVM_TEST.*PASS' log/axi-random-2468ace1.log
+          grep -Eq \
+            'AXI_PROTOCOL_REPORT:.*procedural_errors=0.*pending_aw=0.*pending_w=0.*pending_b=0.*pending_r=0' \
+            log/axi-random-2468ace1.log
+          if grep -Eq 'UVM_(ERROR|FATAL)[[:space:]]*:[[:space:]]*[1-9]' \
+            log/axi-random-2468ace1.log; then
+            echo 'AXI random seed 2468ace1 reported errors or fatals'
             exit 1
           fi
 
@@ -135,7 +185,68 @@ jobs:
             obj_dir/coverage.info
             log/axi-smoke.log
             log/axi-active-uvm.log
+            log/axi-random-13579bdf.log
+            log/axi-random-2468ace1.log
             log/rv32im-coverage.log
+          if-no-files-found: error
+
+  cache-uvm:
+    name: Active ICache/DCache UVM gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    container:
+      image: verilator/verilator:v5.050
+    defaults:
+      run:
+        shell: bash
+    env:
+      UVM_HOME: ${{ github.workspace }}/.ci/uvm-core
+    steps:
+      - name: Check out core repository
+        uses: actions/checkout@v4
+
+      - name: Check out Accellera UVM 2020.3.1
+        uses: actions/checkout@v4
+        with:
+          repository: accellera-official/uvm-core
+          ref: 2020.3.1
+          path: .ci/uvm-core
+
+      - name: Build active cache UVM testbench
+        run: |
+          make -C test_bench/cache_uvm build \
+            UVM_HOME="$UVM_HOME" VERILATOR_JOBS=4
+
+      - name: Run active cache UVM gate
+        run: |
+          set -o pipefail
+          make -C test_bench/cache_uvm run-only UVM_HOME="$UVM_HOME"
+
+      - name: Enforce cache UVM acceptance markers
+        run: |
+          set -euo pipefail
+          cache_log=test_bench/cache_uvm/log/cache-uvm.log
+          test "$(grep -Ec \
+            '^CACHE_UVM_COVERAGE status=PASS required=29 hit=29 missing=0 .*ic_flush=2 ic_inflight_flush=1 ' \
+            "$cache_log" || true)" -eq 1
+          test "$(grep -Fxc \
+            'CACHE_UVM_ORDER status=PASS remaining_ic=0 remaining_dc=0 remaining_control=0 order_errors=0 data_errors=0' \
+            "$cache_log" || true)" -eq 1
+          test "$(grep -Fxc \
+            'CACHE_UVM_TEST status=PASS transactions=54 checks=32 reads=32 writes=19 controls=3 uvm_errors=0' \
+            "$cache_log" || true)" -eq 1
+          if grep -Eq 'UVM_(ERROR|FATAL)[[:space:]]*:[[:space:]]*[1-9]' \
+            "$cache_log"; then
+            echo 'Cache UVM test reported errors or fatals'
+            exit 1
+          fi
+
+      - name: Upload cache UVM evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cache-uvm-log
+          path: test_bench/cache_uvm/log/cache-uvm.log
           if-no-files-found: error
 
   rtl-functional-coverage:
@@ -190,7 +301,7 @@ jobs:
 
       - name: Cover single-issue A/B configuration
         run: |
-          set -o pipefail
+          set -euo pipefail
           verilator --binary --timing -sv -Wall -Wno-fatal -j 0 \
             --coverage-line --coverage-toggle \
             --top-module dual_issue_core_tb -GISSUE_WIDTH=1 \
@@ -200,13 +311,49 @@ jobs:
           ./obj_dir_cov_dual_1/Vdual_issue_core_tb \
             +verilator+coverage+file+obj_dir_cov_dual_1/coverage.dat 2>&1 |
             tee log/coverage-dual-width1.log
+          expected_oracles=(
+            'performance retired=128 memory=0'
+            'raw retired=2 memory=0'
+            'waw-war-x0 retired=6 memory=0'
+            'rv32m retired=12 memory=0'
+            'load-store retired=10 memory=8'
+            'illegal-lsu retired=3 memory=0'
+            'fence retired=3 memory=0'
+            'control-flow retired=8 memory=0'
+          )
+          for evidence in "${expected_oracles[@]}"; do
+            test "$(grep -Fxc \
+              "REFERENCE_ORACLE PASS width=1 test=${evidence}" \
+              log/coverage-dual-width1.log || true)" -eq 1
+          done
+          test "$(grep -c '^REFERENCE_ORACLE PASS width=1 ' \
+            log/coverage-dual-width1.log || true)" -eq 8
+          expected_states=(
+            performance raw waw-war-x0 rv32m load-store illegal-lsu fence \
+            control-flow
+          )
+          for test_name in "${expected_states[@]}"; do
+            test "$(grep -Fxc \
+              "REFERENCE_STATE PASS width=1 test=${test_name} regs=32 memory_bytes=1024" \
+              log/coverage-dual-width1.log || true)" -eq 1
+          done
+          test "$(grep -c '^REFERENCE_STATE PASS width=1 ' \
+            log/coverage-dual-width1.log || true)" -eq 8
+          test "$(grep -Ec \
+            '^TRACE PASS width=1 test=fence retired=3 hash=[[:xdigit:]]{16}$' \
+            log/coverage-dual-width1.log || true)" -eq 1
+          grep -Fq \
+            'DUAL_COVERAGE status=PASS width=1 required=2 hit=2 missing=0' \
+            log/coverage-dual-width1.log
           grep -Fq 'DUAL ISSUE CORE PASS ISSUE_WIDTH=1' \
             log/coverage-dual-width1.log
+          echo \
+            'DUAL_FENCE_ORDER_GATE PASS width=1 retired_alone=1 no_side_effects=1'
           test -s obj_dir_cov_dual_1/coverage.dat
 
       - name: Cover dual-issue configuration
         run: |
-          set -o pipefail
+          set -euo pipefail
           verilator --binary --timing -sv -Wall -Wno-fatal -j 0 \
             --coverage-line --coverage-toggle \
             --top-module dual_issue_core_tb -GISSUE_WIDTH=2 \
@@ -216,8 +363,44 @@ jobs:
           ./obj_dir_cov_dual_2/Vdual_issue_core_tb \
             +verilator+coverage+file+obj_dir_cov_dual_2/coverage.dat 2>&1 |
             tee log/coverage-dual-width2.log
+          expected_oracles=(
+            'performance retired=128 memory=0'
+            'raw retired=2 memory=0'
+            'waw-war-x0 retired=6 memory=0'
+            'rv32m retired=12 memory=0'
+            'load-store retired=10 memory=8'
+            'illegal-lsu retired=3 memory=0'
+            'fence retired=3 memory=0'
+            'control-flow retired=8 memory=0'
+          )
+          for evidence in "${expected_oracles[@]}"; do
+            test "$(grep -Fxc \
+              "REFERENCE_ORACLE PASS width=2 test=${evidence}" \
+              log/coverage-dual-width2.log || true)" -eq 1
+          done
+          test "$(grep -c '^REFERENCE_ORACLE PASS width=2 ' \
+            log/coverage-dual-width2.log || true)" -eq 8
+          expected_states=(
+            performance raw waw-war-x0 rv32m load-store illegal-lsu fence \
+            control-flow
+          )
+          for test_name in "${expected_states[@]}"; do
+            test "$(grep -Fxc \
+              "REFERENCE_STATE PASS width=2 test=${test_name} regs=32 memory_bytes=1024" \
+              log/coverage-dual-width2.log || true)" -eq 1
+          done
+          test "$(grep -c '^REFERENCE_STATE PASS width=2 ' \
+            log/coverage-dual-width2.log || true)" -eq 8
+          test "$(grep -Ec \
+            '^TRACE PASS width=2 test=fence retired=3 hash=[[:xdigit:]]{16}$' \
+            log/coverage-dual-width2.log || true)" -eq 1
+          grep -Fq \
+            'DUAL_COVERAGE status=PASS width=2 required=22 hit=22 missing=0' \
+            log/coverage-dual-width2.log
           grep -Fq 'DUAL ISSUE CORE PASS ISSUE_WIDTH=2' \
             log/coverage-dual-width2.log
+          echo \
+            'DUAL_FENCE_ORDER_GATE PASS width=2 retired_alone=1 no_side_effects=1'
           test -s obj_dir_cov_dual_2/coverage.dat
 
       - name: Compare covered dual-issue traces
@@ -241,7 +424,7 @@ jobs:
 
       - name: Cover dual-issue cache and AXI integration
         run: |
-          set -o pipefail
+          set -euo pipefail
           verilator --binary --timing -sv -Wall -Wno-fatal -j 0 \
             --coverage-line --coverage-toggle \
             --top-module dual_axi_smoke_tb \
@@ -251,12 +434,18 @@ jobs:
           ./obj_dir_cov_dual_axi/Vdual_axi_smoke_tb \
             +verilator+coverage+file+obj_dir_cov_dual_axi/coverage.dat 2>&1 |
             tee log/coverage-dual-axi.log
+          test "$(grep -Fxc \
+            'DUAL_AXI_REFERENCE_ORACLE PASS retired=28 memory=9' \
+            log/coverage-dual-axi.log || true)" -eq 1
+          test "$(grep -Fxc \
+            'DUAL_AXI_REFERENCE_STATE PASS regs=32 memory_requests=9' \
+            log/coverage-dual-axi.log || true)" -eq 1
           grep -Fq 'DUAL_AXI_INTEGRATION PASS' log/coverage-dual-axi.log
           test -s obj_dir_cov_dual_axi/coverage.dat
 
       - name: Cover bounded out-of-order core
         run: |
-          set -o pipefail
+          set -euo pipefail
           verilator --binary -sv -Wall -Wno-fatal -j 0 \
             --coverage-line --coverage-toggle \
             --top-module ooo_core_tb --Mdir obj_dir_cov_ooo \
@@ -265,6 +454,18 @@ jobs:
           ./obj_dir_cov_ooo/Vooo_core_tb \
             +verilator+coverage+file+obj_dir_cov_ooo/coverage.dat 2>&1 |
             tee log/coverage-ooo-core.log
+          test "$(grep -Fxc \
+            'OOO_REFERENCE_ORACLE PASS retired=42 memory=4' \
+            log/coverage-ooo-core.log || true)" -eq 1
+          test "$(grep -Fxc \
+            'OOO_REFERENCE_STATE PASS regs=32 memory_bytes=256 memory_requests=4' \
+            log/coverage-ooo-core.log || true)" -eq 1
+          test "$(grep -Fxc \
+            'OOO_FENCE_ORDER PASS retired_alone=1 younger_load_blocked=1' \
+            log/coverage-ooo-core.log || true)" -eq 1
+          grep -Fq \
+            'OOO_COVERAGE status=PASS required=29 hit=29 missing=0' \
+            log/coverage-ooo-core.log
           grep -Fq 'OOO_CORE_TEST PASS' log/coverage-ooo-core.log
           test -s obj_dir_cov_ooo/coverage.dat
 

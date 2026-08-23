@@ -74,21 +74,93 @@ jobs:
 
       - name: Build and run single-issue A/B configuration
         run: |
-          set -o pipefail
+          set -euo pipefail
           verilator --binary --timing -sv -Wall -Wno-fatal \
             --top-module dual_issue_core_tb -GISSUE_WIDTH=1 \
             --Mdir obj_dir_dual_1 -f test_bench/dual_issue/flist_dual.f
           ./obj_dir_dual_1/Vdual_issue_core_tb | tee dual-issue-width1.log
+          expected_oracles=(
+            'performance retired=128 memory=0'
+            'raw retired=2 memory=0'
+            'waw-war-x0 retired=6 memory=0'
+            'rv32m retired=12 memory=0'
+            'load-store retired=10 memory=8'
+            'illegal-lsu retired=3 memory=0'
+            'fence retired=3 memory=0'
+            'control-flow retired=8 memory=0'
+          )
+          for evidence in "${expected_oracles[@]}"; do
+            test "$(grep -Fxc \
+              "REFERENCE_ORACLE PASS width=1 test=${evidence}" \
+              dual-issue-width1.log || true)" -eq 1
+          done
+          test "$(grep -c '^REFERENCE_ORACLE PASS width=1 ' \
+            dual-issue-width1.log || true)" -eq 8
+          expected_states=(
+            performance raw waw-war-x0 rv32m load-store illegal-lsu fence \
+            control-flow
+          )
+          for test_name in "${expected_states[@]}"; do
+            test "$(grep -Fxc \
+              "REFERENCE_STATE PASS width=1 test=${test_name} regs=32 memory_bytes=1024" \
+              dual-issue-width1.log || true)" -eq 1
+          done
+          test "$(grep -c '^REFERENCE_STATE PASS width=1 ' \
+            dual-issue-width1.log || true)" -eq 8
+          test "$(grep -Ec \
+            '^TRACE PASS width=1 test=fence retired=3 hash=[[:xdigit:]]{16}$' \
+            dual-issue-width1.log || true)" -eq 1
+          grep -Fq \
+            'DUAL_COVERAGE status=PASS width=1 required=2 hit=2 missing=0' \
+            dual-issue-width1.log
           grep -Fq 'DUAL ISSUE CORE PASS ISSUE_WIDTH=1' dual-issue-width1.log
+          echo \
+            'DUAL_FENCE_ORDER_GATE PASS width=1 retired_alone=1 no_side_effects=1'
 
       - name: Build and run dual-issue configuration
         run: |
-          set -o pipefail
+          set -euo pipefail
           verilator --binary --timing -sv -Wall -Wno-fatal \
             --top-module dual_issue_core_tb -GISSUE_WIDTH=2 \
             --Mdir obj_dir_dual_2 -f test_bench/dual_issue/flist_dual.f
           ./obj_dir_dual_2/Vdual_issue_core_tb | tee dual-issue-width2.log
+          expected_oracles=(
+            'performance retired=128 memory=0'
+            'raw retired=2 memory=0'
+            'waw-war-x0 retired=6 memory=0'
+            'rv32m retired=12 memory=0'
+            'load-store retired=10 memory=8'
+            'illegal-lsu retired=3 memory=0'
+            'fence retired=3 memory=0'
+            'control-flow retired=8 memory=0'
+          )
+          for evidence in "${expected_oracles[@]}"; do
+            test "$(grep -Fxc \
+              "REFERENCE_ORACLE PASS width=2 test=${evidence}" \
+              dual-issue-width2.log || true)" -eq 1
+          done
+          test "$(grep -c '^REFERENCE_ORACLE PASS width=2 ' \
+            dual-issue-width2.log || true)" -eq 8
+          expected_states=(
+            performance raw waw-war-x0 rv32m load-store illegal-lsu fence \
+            control-flow
+          )
+          for test_name in "${expected_states[@]}"; do
+            test "$(grep -Fxc \
+              "REFERENCE_STATE PASS width=2 test=${test_name} regs=32 memory_bytes=1024" \
+              dual-issue-width2.log || true)" -eq 1
+          done
+          test "$(grep -c '^REFERENCE_STATE PASS width=2 ' \
+            dual-issue-width2.log || true)" -eq 8
+          test "$(grep -Ec \
+            '^TRACE PASS width=2 test=fence retired=3 hash=[[:xdigit:]]{16}$' \
+            dual-issue-width2.log || true)" -eq 1
+          grep -Fq \
+            'DUAL_COVERAGE status=PASS width=2 required=22 hit=22 missing=0' \
+            dual-issue-width2.log
           grep -Fq 'DUAL ISSUE CORE PASS ISSUE_WIDTH=2' dual-issue-width2.log
+          echo \
+            'DUAL_FENCE_ORDER_GATE PASS width=2 retired_alone=1 no_side_effects=1'
 
       - name: Compare architectural traces across issue widths
         run: |
@@ -140,12 +212,18 @@ jobs:
 
       - name: Build and run dual-issue AXI integration smoke
         run: |
-          set -o pipefail
+          set -euo pipefail
           verilator --binary --timing -sv -Wall -Wno-fatal \
             --top-module dual_axi_smoke_tb \
             --Mdir obj_dir_dual_axi \
             -f test_bench/dual_issue/flist_dual_axi.f
           ./obj_dir_dual_axi/Vdual_axi_smoke_tb | tee dual-axi.log
+          test "$(grep -Fxc \
+            'DUAL_AXI_REFERENCE_ORACLE PASS retired=28 memory=9' \
+            dual-axi.log || true)" -eq 1
+          test "$(grep -Fxc \
+            'DUAL_AXI_REFERENCE_STATE PASS regs=32 memory_requests=9' \
+            dual-axi.log || true)" -eq 1
           grep -Fq 'DUAL_AXI_INTEGRATION PASS' dual-axi.log
 
   ooo-rtl:
@@ -163,8 +241,68 @@ jobs:
 
       - name: Build and run out-of-order core acceptance test
         run: |
-          set -o pipefail
+          set -euo pipefail
           verilator --binary -sv -Wall -Wno-fatal \
             --top-module ooo_core_tb --Mdir obj_dir_ooo -f flist_ooo.f
           ./obj_dir_ooo/Vooo_core_tb | tee ooo-core.log
+          test "$(grep -Fxc \
+            'OOO_REFERENCE_ORACLE PASS retired=42 memory=4' \
+            ooo-core.log || true)" -eq 1
+          test "$(grep -Fxc \
+            'OOO_REFERENCE_STATE PASS regs=32 memory_bytes=256 memory_requests=4' \
+            ooo-core.log || true)" -eq 1
+          test "$(grep -Fxc \
+            'OOO_FENCE_ORDER PASS retired_alone=1 younger_load_blocked=1' \
+            ooo-core.log || true)" -eq 1
+          grep -Fq \
+            'OOO_COVERAGE status=PASS required=29 hit=29 missing=0' \
+            ooo-core.log
           grep -Fq 'OOO_CORE_TEST PASS' ooo-core.log
+
+  cross-core-equivalence:
+    name: Stable, dual-width, and OoO common-program equivalence
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    container:
+      image: verilator/verilator:v5.050
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Build, run, and compare all architectural summaries
+        run: |
+          set -euo pipefail
+          implementations=(stable dual1 dual2 ooo)
+          for core_kind in "${!implementations[@]}"; do
+            implementation="${implementations[$core_kind]}"
+            object_dir="obj_dir_cross_${implementation}"
+            log_file="cross-core-${implementation}.log"
+            verilator --binary --timing -sv -Wall -Wno-fatal \
+              --output-split 0 --output-split-cfuncs 0 \
+              --top-module cross_core_equivalence_tb \
+              -GCORE_KIND="${core_kind}" --Mdir "${object_dir}" \
+              -CFLAGS "-std=c++17 -I${GITHUB_WORKSPACE}/C_model" \
+              -f test_bench/cross_core/flist_cross_core.f
+            "./${object_dir}/Vcross_core_equivalence_tb" | tee "${log_file}"
+            grep -Fq \
+              "CROSS_CORE_ORACLE PASS impl=${implementation} retired=10 memory_ops=2 fence=1" \
+              "${log_file}"
+            grep -Fq \
+              "CROSS_CORE_STATE PASS impl=${implementation} regs=32 memory_bytes=256 retired=10 memory_ops=2 fence=1" \
+              "${log_file}"
+            sed -n \
+              "s/^CROSS_CORE_SUMMARY impl=${implementation} /CROSS_CORE_SUMMARY /p" \
+              "${log_file}" > "cross-core-${implementation}.summary"
+            test "$(wc -l < "cross-core-${implementation}.summary")" -eq 1
+          done
+
+          for implementation in dual1 dual2 ooo; do
+            diff -u cross-core-stable.summary \
+              "cross-core-${implementation}.summary"
+          done
+          cat cross-core-stable.summary
+          echo \
+            'CROSS_CORE_EQUIVALENCE PASS implementations=4 oracle=cmodel reference=stable'

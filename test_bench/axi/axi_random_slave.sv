@@ -1,9 +1,9 @@
 `timescale 1ns/1ps
 `include "axi_defs.vh"
 
-// Deterministic pseudo-random AXI4 memory slave used only by the standalone
-// subsystem test. It deliberately inserts address/data ready stalls and read/
-// write response latency while keeping every VALID payload stable.
+// Deterministic pseudo-random AXI4 memory slave used by standalone verification
+// tests. It deliberately inserts address/data ready stalls and read/write
+// response latency while keeping every VALID payload stable.
 module axi_random_slave #(
     parameter int ADDR_WIDTH = 32,
     parameter int DATA_WIDTH = 32,
@@ -13,7 +13,11 @@ module axi_random_slave #(
     parameter logic [31:0] SEED = 32'h1ace_b00c,
     parameter bit ENABLE_ERROR_RESPONSES = 1'b0,
     parameter logic [ADDR_WIDTH-1:0] ERROR_ADDR = {ADDR_WIDTH{1'b1}},
-    parameter logic [1:0] ERROR_RESP = `AXI_RESP_SLVERR
+    parameter logic [1:0] ERROR_RESP = `AXI_RESP_SLVERR,
+    // Independent error address maps used by the active random stress test.
+    // ERROR_ADDR/ERROR_RESP remain as a backwards-compatible third mapping.
+    parameter logic [ADDR_WIDTH-1:0] SLVERR_ADDR = {ADDR_WIDTH{1'b1}},
+    parameter logic [ADDR_WIDTH-1:0] DECERR_ADDR = {ADDR_WIDTH{1'b1}}
 )(
     input  logic                         clk,
     input  logic                         reset,
@@ -84,6 +88,20 @@ module axi_random_slave #(
                      value[31] ^ value[21] ^ value[1] ^ value[0]};
     endfunction
 
+    function automatic logic [1:0] response_for_addr(
+        input logic [ADDR_WIDTH-1:0] addr
+    );
+        if (!ENABLE_ERROR_RESPONSES)
+            return `AXI_RESP_OKAY;
+        if (addr == SLVERR_ADDR)
+            return `AXI_RESP_SLVERR;
+        if (addr == DECERR_ADDR)
+            return `AXI_RESP_DECERR;
+        if (addr == ERROR_ADDR)
+            return ERROR_RESP;
+        return `AXI_RESP_OKAY;
+    endfunction
+
     logic [31:0] lfsr_q;
     always_ff @(posedge clk or posedge reset) begin
         if (reset) begin
@@ -100,7 +118,7 @@ module axi_random_slave #(
     logic [7:0]                   read_len_q;
     logic [7:0]                   read_beat_q;
     logic [2:0]                   read_size_q;
-    logic                         read_error_q;
+    logic [1:0]                   read_resp_q;
     logic [2:0]                   ar_wait_q;
     logic [2:0]                   r_wait_q;
 
@@ -119,7 +137,7 @@ module axi_random_slave #(
             read_len_q    <= '0;
             read_beat_q   <= '0;
             read_size_q   <= '0;
-            read_error_q  <= 1'b0;
+            read_resp_q   <= `AXI_RESP_OKAY;
             ar_wait_q     <= 3'd3;
             r_wait_q      <= '0;
             s_axi_rid     <= '0;
@@ -146,8 +164,7 @@ module axi_random_slave #(
                 read_len_q    <= s_axi_arlen;
                 read_beat_q   <= '0;
                 read_size_q   <= s_axi_arsize;
-                read_error_q  <= ENABLE_ERROR_RESPONSES &&
-                                 (s_axi_araddr == ERROR_ADDR);
+                read_resp_q   <= response_for_addr(s_axi_araddr);
                 r_wait_q      <= {1'b0, lfsr_q[2:1]} + 1'b1;
             end
             else if (read_active_q) begin
@@ -174,8 +191,7 @@ module axi_random_slave #(
                     end
                     s_axi_rid    <= read_id_q;
                     s_axi_rdata  <= mem[current_read_word];
-                    s_axi_rresp  <= read_error_q ? ERROR_RESP :
-                                                   `AXI_RESP_OKAY;
+                    s_axi_rresp  <= read_resp_q;
                     s_axi_rlast  <= (read_beat_q == read_len_q);
                     s_axi_rvalid <= 1'b1;
                 end
@@ -190,7 +206,7 @@ module axi_random_slave #(
     logic [7:0]                   write_len_q;
     logic [7:0]                   write_beat_q;
     logic [2:0]                   write_size_q;
-    logic                         write_error_q;
+    logic [1:0]                   write_resp_q;
     logic [2:0]                   aw_wait_q;
     logic [2:0]                   w_wait_q;
     logic [2:0]                   b_wait_q;
@@ -213,7 +229,7 @@ module axi_random_slave #(
             write_len_q    <= '0;
             write_beat_q   <= '0;
             write_size_q   <= '0;
-            write_error_q  <= 1'b0;
+            write_resp_q   <= `AXI_RESP_OKAY;
             aw_wait_q      <= 3'd3;
             w_wait_q       <= '0;
             b_wait_q       <= '0;
@@ -240,8 +256,7 @@ module axi_random_slave #(
                 write_len_q    <= s_axi_awlen;
                 write_beat_q   <= '0;
                 write_size_q   <= s_axi_awsize;
-                write_error_q  <= ENABLE_ERROR_RESPONSES &&
-                                  (s_axi_awaddr == ERROR_ADDR);
+                write_resp_q   <= response_for_addr(s_axi_awaddr);
                 w_wait_q       <= {1'b0, lfsr_q[11:10]} + 1'b1;
             end
             else if (write_active_q && s_axi_wvalid) begin
@@ -257,7 +272,8 @@ module axi_random_slave #(
                     end
                     for (byte_index = 0; byte_index < DATA_BYTES;
                          byte_index = byte_index + 1) begin
-                        if (!write_error_q && s_axi_wstrb[byte_index]) begin
+                        if ((write_resp_q == `AXI_RESP_OKAY) &&
+                            s_axi_wstrb[byte_index]) begin
                             mem[current_write_word][byte_index*8 +: 8]
                                 <= s_axi_wdata[byte_index*8 +: 8];
                         end
@@ -286,8 +302,7 @@ module axi_random_slave #(
                 end
                 else if (lfsr_q[18]) begin
                     s_axi_bid    <= write_id_q;
-                    s_axi_bresp  <= write_error_q ? ERROR_RESP :
-                                                     `AXI_RESP_OKAY;
+                    s_axi_bresp  <= write_resp_q;
                     s_axi_bvalid <= 1'b1;
                     b_pending_q  <= 1'b0;
                 end

@@ -75,6 +75,15 @@ class axi_transaction #(
     bit b_backpressure;
     bit ar_backpressure;
     bit r_backpressure;
+    // Cycle-accurate stall observations.  A cycle is counted whenever VALID
+    // is asserted and READY is deasserted on the corresponding channel.  The
+    // boolean fields above are retained for existing users and are derived
+    // from these counters by the monitor.
+    int unsigned aw_stall_cycles;
+    int unsigned w_stall_cycles;
+    int unsigned b_stall_cycles;
+    int unsigned ar_stall_cycles;
+    int unsigned r_stall_cycles;
     bit last_ok;
     bit beat_count_ok;
 

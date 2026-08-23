@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from scripts.regression import is_error_line, parse_log
+from scripts.regression import duplicate_source_stems, is_error_line, parse_log
 
 
 class RegressionLogTests(unittest.TestCase):
@@ -42,6 +42,24 @@ class RegressionLogTests(unittest.TestCase):
         self.assertTrue(is_error_line("UVM_FATAL : 1"))
         self.assertTrue(is_error_line("%Error: simulation aborted"))
         self.assertTrue(is_error_line("SIM_TIMEOUT: exceeded limit"))
+
+    def test_duplicate_source_stems_are_rejected_before_compilation(self):
+        duplicates = duplicate_source_stems([
+            Path("tests/a/main.cpp"),
+            Path("tests/b/main.cpp"),
+            Path("tests/unique.cpp"),
+        ])
+        self.assertEqual(set(duplicates), {"main"})
+        self.assertEqual(len(duplicates["main"]), 2)
+
+    def test_unique_source_stems_have_no_image_collision(self):
+        self.assertEqual(
+            duplicate_source_stems([
+                Path("tests/add.cpp"),
+                Path("tests/sub.cpp"),
+            ]),
+            {},
+        )
 
 
 if __name__ == "__main__":

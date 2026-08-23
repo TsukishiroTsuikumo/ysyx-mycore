@@ -14,6 +14,7 @@ class axi_w_capture #(
     bit                  last_q[$];
     bit [USER_WIDTH-1:0] user_q[$];
     bit                  backpressure;
+    int unsigned         stall_cycles;
 endclass
 
 class axi_monitor #(
@@ -48,6 +49,8 @@ class axi_monitor #(
 
     bit aw_stall_seen;
     bit ar_stall_seen;
+    int unsigned aw_stall_cycles;
+    int unsigned ar_stall_cycles;
 
     int unsigned aw_count;
     int unsigned w_burst_count;
@@ -93,6 +96,8 @@ class axi_monitor #(
         current_w = null;
         aw_stall_seen = 1'b0;
         ar_stall_seen = 1'b0;
+        aw_stall_cycles = 0;
+        ar_stall_cycles = 0;
     endfunction
 
     function int find_write_response(input bit [ID_WIDTH-1:0] id);
@@ -112,7 +117,10 @@ class axi_monitor #(
     function void sample_aw();
         txn_t txn;
 
-        if (vif.awvalid && !vif.awready) aw_stall_seen = 1'b1;
+        if (vif.awvalid && !vif.awready) begin
+            aw_stall_seen = 1'b1;
+            aw_stall_cycles++;
+        end
 
         if (vif.awvalid && vif.awready) begin
             txn = create_txn("write_txn");
@@ -130,7 +138,9 @@ class axi_monitor #(
             txn.address_user    = vif.awuser;
             txn.owner           = vif.aw_owner;
             txn.aw_backpressure = aw_stall_seen;
+            txn.aw_stall_cycles = aw_stall_cycles;
             aw_stall_seen       = 1'b0;
+            aw_stall_cycles     = 0;
             aw_q.push_back(txn);
             aw_count++;
         end
@@ -139,7 +149,10 @@ class axi_monitor #(
     function void sample_w();
         if (vif.wvalid && current_w == null) current_w = new();
 
-        if (vif.wvalid && !vif.wready) current_w.backpressure = 1'b1;
+        if (vif.wvalid && !vif.wready) begin
+            current_w.backpressure = 1'b1;
+            current_w.stall_cycles++;
+        end
 
         if (vif.wvalid && vif.wready) begin
             current_w.data_q.push_back(vif.wdata);
@@ -169,6 +182,7 @@ class axi_monitor #(
             txn.last_q = data.last_q;
             txn.data_user_q = data.user_q;
             txn.w_backpressure = data.backpressure;
+            txn.w_stall_cycles = data.stall_cycles;
 
             expected = txn.expected_beats();
             txn.beat_count_ok = (txn.data_q.size() == expected);
@@ -193,7 +207,10 @@ class axi_monitor #(
             return;
         end
 
-        if (!vif.bready) write_response_q[idx].b_backpressure = 1'b1;
+        if (!vif.bready) begin
+            write_response_q[idx].b_backpressure = 1'b1;
+            write_response_q[idx].b_stall_cycles++;
+        end
 
         if (vif.bready) begin
             txn = write_response_q[idx];
@@ -208,7 +225,10 @@ class axi_monitor #(
     function void sample_ar();
         txn_t txn;
 
-        if (vif.arvalid && !vif.arready) ar_stall_seen = 1'b1;
+        if (vif.arvalid && !vif.arready) begin
+            ar_stall_seen = 1'b1;
+            ar_stall_cycles++;
+        end
 
         if (vif.arvalid && vif.arready) begin
             txn = create_txn("read_txn");
@@ -226,7 +246,9 @@ class axi_monitor #(
             txn.address_user    = vif.aruser;
             txn.owner           = vif.ar_owner;
             txn.ar_backpressure = ar_stall_seen;
+            txn.ar_stall_cycles = ar_stall_cycles;
             ar_stall_seen       = 1'b0;
+            ar_stall_cycles     = 0;
             read_q.push_back(txn);
             ar_count++;
         end
@@ -246,7 +268,10 @@ class axi_monitor #(
             return;
         end
 
-        if (!vif.rready) read_q[idx].r_backpressure = 1'b1;
+        if (!vif.rready) begin
+            read_q[idx].r_backpressure = 1'b1;
+            read_q[idx].r_stall_cycles++;
+        end
 
         if (vif.rready) begin
             read_q[idx].data_q.push_back(vif.rdata);

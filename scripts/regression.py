@@ -121,6 +121,24 @@ def discover_sources(cli_sources: list[str]) -> list[Path]:
     return [source for source in sources if source.suffix == ".cpp"]
 
 
+def duplicate_source_stems(sources: list[Path]) -> dict[str, list[Path]]:
+    """Return source stems that would collide in IMAGE_DIR.
+
+    ``compile_image`` intentionally preserves the long-standing
+    ``<stem>_image.mem`` artifact name. Rejecting ambiguous stems is safer than
+    silently overwriting one program image and running another program twice.
+    """
+
+    by_stem: dict[str, list[Path]] = {}
+    for source in sources:
+        by_stem.setdefault(source.stem, []).append(source)
+    return {
+        stem: stem_sources
+        for stem, stem_sources in by_stem.items()
+        if len(stem_sources) > 1
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("sources", nargs="*", help="C/C++ programs to compile and run")
@@ -140,6 +158,17 @@ def main() -> int:
     sources = discover_sources(args.sources)
     if not sources:
         print("ERROR: no C/C++ regression sources found", file=sys.stderr)
+        return 2
+
+    duplicate_stems = duplicate_source_stems(sources)
+    if duplicate_stems:
+        for stem, stem_sources in sorted(duplicate_stems.items()):
+            joined_sources = ", ".join(str(source) for source in stem_sources)
+            print(
+                f"ERROR: duplicate regression source stem '{stem}' would "
+                f"overwrite {stem}_image.mem: {joined_sources}",
+                file=sys.stderr,
+            )
         return 2
 
     images: list[Path] = []

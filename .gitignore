@@ -25,6 +25,7 @@
 !test_bench/programs/*.mem
 
 /obj_dir/
+**/obj_dir*/
 /coverage/
 /log/
 /C_model/cmodel_tests
