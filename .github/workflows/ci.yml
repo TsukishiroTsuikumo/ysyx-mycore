@@ -49,3 +49,49 @@ jobs:
         run: >-
           verilator --lint-only --timing -sv -Wall -Wno-fatal
           --top-module mycore_wrapper -f flist_rtl.f
+
+  standalone-rtl:
+    name: AXI and dual-issue executable tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    container:
+      image: verilator/verilator:v5.050
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Build and run standalone AXI subsystem test
+        run: |
+          set -o pipefail
+          verilator --binary --timing -sv -Wall -Wno-fatal \
+            --top-module axi_subsystem_tb \
+            --Mdir obj_dir_axi -f flist_axi_tb.f
+          ./obj_dir_axi/Vaxi_subsystem_tb | tee axi-subsystem.log
+          grep -Fq 'AXI_SUBSYSTEM_TEST PASS' axi-subsystem.log
+
+      - name: Build and run single-issue A/B configuration
+        run: |
+          set -o pipefail
+          verilator --binary --timing -sv -Wall -Wno-fatal \
+            --top-module dual_issue_core_tb -GISSUE_WIDTH=1 \
+            --Mdir obj_dir_dual_1 -f test_bench/dual_issue/flist_dual.f
+          ./obj_dir_dual_1/Vdual_issue_core_tb | tee dual-issue-width1.log
+          grep -Fq 'DUAL ISSUE CORE PASS ISSUE_WIDTH=1' dual-issue-width1.log
+
+      - name: Build and run dual-issue configuration
+        run: |
+          set -o pipefail
+          verilator --binary --timing -sv -Wall -Wno-fatal \
+            --top-module dual_issue_core_tb -GISSUE_WIDTH=2 \
+            --Mdir obj_dir_dual_2 -f test_bench/dual_issue/flist_dual.f
+          ./obj_dir_dual_2/Vdual_issue_core_tb | tee dual-issue-width2.log
+          grep -Fq 'DUAL ISSUE CORE PASS ISSUE_WIDTH=2' dual-issue-width2.log
+
+      - name: Compare architectural traces across issue widths
+        run: |
+          sed -n 's/^TRACE PASS width=1 /TRACE PASS /p' \
+            dual-issue-width1.log > trace-width1.txt
+          sed -n 's/^TRACE PASS width=2 /TRACE PASS /p' \
+            dual-issue-width2.log > trace-width2.txt
+          test -s trace-width1.txt
+          diff -u trace-width1.txt trace-width2.txt

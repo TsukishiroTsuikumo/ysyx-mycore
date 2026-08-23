@@ -36,13 +36,14 @@ jobs:
           g++ --version
           make --version
 
-      - name: Elaborate and build the UVM testbench
-        run: make build
+      - name: Elaborate and build the UVM testbench with coverage
+        run: make build COVERAGE=1
 
       - name: Run cache, AXI, and differential smoke test
         run: |
           mkdir -p log
           make run-only \
+            COVERAGE=1 \
             TEST=mem_image_test \
             MEM_FILE=test_bench/programs/axi_smoke.mem \
             TARGET_COMMITS=32 \
@@ -59,3 +60,19 @@ jobs:
             echo 'UVM reported errors or fatals'
             exit 1
           fi
+
+      - name: Generate line report and retain toggle database
+        run: |
+          test -s obj_dir/coverage.dat
+          verilator_coverage --write-info obj_dir/coverage.info obj_dir/coverage.dat
+          test -s obj_dir/coverage.info
+
+      - name: Upload coverage evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: verilator-coverage
+          path: |
+            obj_dir/coverage.dat
+            obj_dir/coverage.info
+            log/axi-smoke.log
+          if-no-files-found: error
