@@ -47,6 +47,7 @@ jobs:
           mkdir -p log
           make run-only \
             COVERAGE=1 \
+            COVERAGE_FILE=obj_dir/coverage-axi-smoke.dat \
             TEST=mem_image_test \
             MEM_FILE=test_bench/programs/axi_smoke.mem \
             TARGET_COMMITS=32 \
@@ -61,6 +62,32 @@ jobs:
           grep -Eq 'AXI_PROTOCOL_REPORT:.*procedural_errors=0' log/axi-smoke.log
           if grep -Eq 'UVM_(ERROR|FATAL)[[:space:]]*:[[:space:]]*[1-9]' log/axi-smoke.log; then
             echo 'UVM reported errors or fatals'
+            exit 1
+          fi
+
+      - name: Run deterministic RV32IM coverage program
+        run: |
+          make run-only \
+            COVERAGE=1 \
+            COVERAGE_FILE=obj_dir/coverage-rv32im.dat \
+            TEST=mem_image_test \
+            MEM_FILE=test_bench/programs/rv32im_coverage.mem \
+            TARGET_COMMITS=66 \
+            REQUIRE_ISA_COVERAGE=1 \
+            TIMEOUT_CYCLES=30000 \
+            SIM_TIMEOUT=100000 \
+            LOG=log/rv32im-coverage.log
+
+      - name: Enforce RV32IM coverage-program acceptance markers
+        run: |
+          grep -Eq 'PROGRAM_SCORE.*PASS=[1-9][0-9]* FAIL=0 MISSING=0 EXTRA=0' \
+            log/rv32im-coverage.log
+          grep -Fq \
+            'ISA_COVERAGE status=PASS required=57 hit=57 missing=0 instr=45/45 branch=12/12' \
+            log/rv32im-coverage.log
+          if grep -Eq 'UVM_(ERROR|FATAL)[[:space:]]*:[[:space:]]*[1-9]' \
+            log/rv32im-coverage.log; then
+            echo 'RV32IM coverage program reported errors or fatals'
             exit 1
           fi
 
@@ -92,8 +119,10 @@ jobs:
 
       - name: Generate line report and retain toggle database
         run: |
-          test -s obj_dir/coverage.dat
-          verilator_coverage --write-info obj_dir/coverage.info obj_dir/coverage.dat
+          test -s obj_dir/coverage-axi-smoke.dat
+          test -s obj_dir/coverage-rv32im.dat
+          verilator_coverage --write-info obj_dir/coverage.info \
+            obj_dir/coverage-axi-smoke.dat obj_dir/coverage-rv32im.dat
           test -s obj_dir/coverage.info
 
       - name: Upload coverage evidence
@@ -101,8 +130,198 @@ jobs:
         with:
           name: verilator-coverage
           path: |
-            obj_dir/coverage.dat
+            obj_dir/coverage-axi-smoke.dat
+            obj_dir/coverage-rv32im.dat
             obj_dir/coverage.info
             log/axi-smoke.log
             log/axi-active-uvm.log
+            log/rv32im-coverage.log
+          if-no-files-found: error
+
+  rtl-functional-coverage:
+    name: Standalone RTL functional coverage
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    container:
+      image: verilator/verilator:v5.050
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Report Verilator version
+        run: verilator --version
+
+      - name: Create coverage log directory
+        run: mkdir -p log
+
+      - name: Cover standalone AXI subsystem
+        run: |
+          set -o pipefail
+          verilator --binary --timing -sv -Wall -Wno-fatal -j 0 \
+            --coverage-line --coverage-toggle \
+            --top-module axi_subsystem_tb \
+            --Mdir obj_dir_cov_axi -f flist_axi_tb.f
+          ./obj_dir_cov_axi/Vaxi_subsystem_tb \
+            +verilator+coverage+file+obj_dir_cov_axi/coverage.dat 2>&1 |
+            tee log/coverage-axi-subsystem.log
+          grep -Fq 'AXI_SUBSYSTEM_TEST PASS' log/coverage-axi-subsystem.log
+          test -s obj_dir_cov_axi/coverage.dat
+
+      - name: Cover direct cache regression
+        run: |
+          set -o pipefail
+          verilator --binary --timing -sv -Wall -Wno-fatal -j 0 \
+            --output-split-cfuncs 0 \
+            --coverage-line --coverage-toggle \
+            --top-module cache_directed_tb \
+            --Mdir obj_dir_cov_cache \
+            -F test_bench/cache/flist_cache_directed.f
+          ./obj_dir_cov_cache/Vcache_directed_tb \
+            +verilator+coverage+file+obj_dir_cov_cache/coverage.dat 2>&1 |
+            tee log/coverage-cache-direct.log
+          grep -Fq 'ICACHE_DIRECTED_TEST: PASS' log/coverage-cache-direct.log
+          grep -Fq 'DCACHE_DIRECTED_TEST: PASS' log/coverage-cache-direct.log
+          grep -Fq 'CACHE_DIRECTED_ACCEPTANCE status=PASS' \
+            log/coverage-cache-direct.log
+          test -s obj_dir_cov_cache/coverage.dat
+
+      - name: Cover single-issue A/B configuration
+        run: |
+          set -o pipefail
+          verilator --binary --timing -sv -Wall -Wno-fatal -j 0 \
+            --coverage-line --coverage-toggle \
+            --top-module dual_issue_core_tb -GISSUE_WIDTH=1 \
+            --Mdir obj_dir_cov_dual_1 \
+            -CFLAGS "-std=c++17 -I${GITHUB_WORKSPACE}/C_model" \
+            -f test_bench/dual_issue/flist_dual.f
+          ./obj_dir_cov_dual_1/Vdual_issue_core_tb \
+            +verilator+coverage+file+obj_dir_cov_dual_1/coverage.dat 2>&1 |
+            tee log/coverage-dual-width1.log
+          grep -Fq 'DUAL ISSUE CORE PASS ISSUE_WIDTH=1' \
+            log/coverage-dual-width1.log
+          test -s obj_dir_cov_dual_1/coverage.dat
+
+      - name: Cover dual-issue configuration
+        run: |
+          set -o pipefail
+          verilator --binary --timing -sv -Wall -Wno-fatal -j 0 \
+            --coverage-line --coverage-toggle \
+            --top-module dual_issue_core_tb -GISSUE_WIDTH=2 \
+            --Mdir obj_dir_cov_dual_2 \
+            -CFLAGS "-std=c++17 -I${GITHUB_WORKSPACE}/C_model" \
+            -f test_bench/dual_issue/flist_dual.f
+          ./obj_dir_cov_dual_2/Vdual_issue_core_tb \
+            +verilator+coverage+file+obj_dir_cov_dual_2/coverage.dat 2>&1 |
+            tee log/coverage-dual-width2.log
+          grep -Fq 'DUAL ISSUE CORE PASS ISSUE_WIDTH=2' \
+            log/coverage-dual-width2.log
+          test -s obj_dir_cov_dual_2/coverage.dat
+
+      - name: Compare covered dual-issue traces
+        run: |
+          sed -n 's/^TRACE PASS width=1 /TRACE PASS /p' \
+            log/coverage-dual-width1.log > log/coverage-trace-width1.txt
+          sed -n 's/^TRACE PASS width=2 /TRACE PASS /p' \
+            log/coverage-dual-width2.log > log/coverage-trace-width2.txt
+          test -s log/coverage-trace-width1.txt
+          diff -u log/coverage-trace-width1.txt log/coverage-trace-width2.txt
+          width1_cycles=$(sed -n \
+            's/^PERF PASS width=1 cycles=\([0-9][0-9]*\).*/\1/p' \
+            log/coverage-dual-width1.log)
+          width2_cycles=$(sed -n \
+            's/^PERF PASS width=2 cycles=\([0-9][0-9]*\).*/\1/p' \
+            log/coverage-dual-width2.log)
+          test -n "$width1_cycles"
+          test -n "$width2_cycles"
+          test "$width2_cycles" -lt "$width1_cycles"
+          test $((width2_cycles * 4)) -le $((width1_cycles * 3))
+
+      - name: Cover dual-issue cache and AXI integration
+        run: |
+          set -o pipefail
+          verilator --binary --timing -sv -Wall -Wno-fatal -j 0 \
+            --coverage-line --coverage-toggle \
+            --top-module dual_axi_smoke_tb \
+            --Mdir obj_dir_cov_dual_axi \
+            -CFLAGS "-std=c++17 -I${GITHUB_WORKSPACE}/C_model" \
+            -f test_bench/dual_issue/flist_dual_axi.f
+          ./obj_dir_cov_dual_axi/Vdual_axi_smoke_tb \
+            +verilator+coverage+file+obj_dir_cov_dual_axi/coverage.dat 2>&1 |
+            tee log/coverage-dual-axi.log
+          grep -Fq 'DUAL_AXI_INTEGRATION PASS' log/coverage-dual-axi.log
+          test -s obj_dir_cov_dual_axi/coverage.dat
+
+      - name: Cover bounded out-of-order core
+        run: |
+          set -o pipefail
+          verilator --binary -sv -Wall -Wno-fatal -j 0 \
+            --coverage-line --coverage-toggle \
+            --top-module ooo_core_tb --Mdir obj_dir_cov_ooo \
+            -CFLAGS "-std=c++17 -I${GITHUB_WORKSPACE}/C_model" \
+            -f flist_ooo.f
+          ./obj_dir_cov_ooo/Vooo_core_tb \
+            +verilator+coverage+file+obj_dir_cov_ooo/coverage.dat 2>&1 |
+            tee log/coverage-ooo-core.log
+          grep -Fq 'OOO_CORE_TEST PASS' log/coverage-ooo-core.log
+          test -s obj_dir_cov_ooo/coverage.dat
+
+      - name: Upload standalone RTL coverage evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: rtl-functional-coverage
+          path: |
+            obj_dir_cov_axi/coverage.dat
+            obj_dir_cov_cache/coverage.dat
+            obj_dir_cov_dual_1/coverage.dat
+            obj_dir_cov_dual_2/coverage.dat
+            obj_dir_cov_dual_axi/coverage.dat
+            obj_dir_cov_ooo/coverage.dat
+            log/coverage-*.log
+            log/coverage-trace-*.txt
+          if-no-files-found: error
+
+  coverage-threshold:
+    name: Merged DUT coverage threshold
+    needs:
+      - verilator-uvm-build
+      - rtl-functional-coverage
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Test coverage parser and gate
+        run: python3 -m unittest scripts.test_coverage
+
+      - name: Download UVM coverage database
+        uses: actions/download-artifact@v4
+        with:
+          name: verilator-coverage
+          path: coverage-inputs/uvm
+
+      - name: Download standalone RTL coverage databases
+        uses: actions/download-artifact@v4
+        with:
+          name: rtl-functional-coverage
+          path: coverage-inputs/rtl
+
+      - name: Enforce merged DUT coverage thresholds
+        run: |
+          set -o pipefail
+          mapfile -t coverage_inputs < <(
+            find coverage-inputs -type f -name '*.dat' -print | sort
+          )
+          test "${#coverage_inputs[@]}" -eq 8
+          python3 scripts/check_coverage.py "${coverage_inputs[@]}" |
+            tee coverage-summary.txt
+
+      - name: Upload merged coverage summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-threshold-summary
+          path: coverage-summary.txt
           if-no-files-found: error

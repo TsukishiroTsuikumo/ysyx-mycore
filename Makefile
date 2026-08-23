@@ -36,6 +36,9 @@ endif
 ifneq ($(SIM_TIMEOUT),)
 RUN_ARGS += +SIM_TIMEOUT=$(SIM_TIMEOUT)
 endif
+ifeq ($(REQUIRE_ISA_COVERAGE),1)
+RUN_ARGS += +REQUIRE_ISA_COVERAGE
+endif
 
 IMAGE_DIR 			?= ./csrc/image
 IMAGE_TARGET 		?= main_image.mem

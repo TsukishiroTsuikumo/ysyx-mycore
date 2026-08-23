@@ -1,0 +1,27 @@
+{
+  "covered_min_hits": 1,
+  "scope": {
+    "source_root": "dut",
+    "excluded_path_parts": [
+      ".ci",
+      "build",
+      "generated",
+      "obj_dir",
+      "test_bench"
+    ]
+  },
+  "metrics": {
+    "line": {
+      "minimum_percent": 75.0,
+      "blocking": true
+    },
+    "toggle": {
+      "minimum_percent": 35.0,
+      "blocking": true
+    },
+    "branch": {
+      "minimum_percent": 0.0,
+      "blocking": false
+    }
+  }
+}

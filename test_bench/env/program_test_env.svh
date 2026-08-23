@@ -8,6 +8,7 @@ class program_test_env extends uvm_env;
     cache_system_monitor cache_mon;
     dcache_agent         dc_agent;
     shared_axi_observer_t axi_observer;
+    isa_coverage isa_cov;
 
     mycore_scoreboard scoreboard;
 
@@ -28,6 +29,7 @@ class program_test_env extends uvm_env;
             this, "axi_observer", "require_quiescent_end", 1'b0);
         axi_observer = shared_axi_observer_t::type_id::create(
             "axi_observer", this);
+        isa_cov = isa_coverage::type_id::create("isa_cov", this);
         scoreboard = mycore_scoreboard::type_id::create("scoreboard", this);
     endfunction
 
@@ -35,6 +37,7 @@ class program_test_env extends uvm_env;
         super.connect_phase(phase);
         dc_agent.monitor.data_port.connect(scoreboard.dmem_ap);
         rt_agent.monitor.analysis_port.connect(scoreboard.retire_imp);
+        rt_agent.monitor.analysis_port.connect(isa_cov.analysis_export);
     endfunction
 
 endclass

@@ -25,6 +25,8 @@ package mycore_pkg;
     `include "item/icache_item.svh"
     `include "item/program_image.svh"
 
+    `include "coverage/isa_coverage.svh"
+
     `include "sequence/instr_sequence.svh"
     `include "sequence/fetch_data_sequence.svh"
     `include "sequence/icache_sequence.svh"
