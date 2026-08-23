@@ -25,7 +25,11 @@ module mycore_wrapper (
     output          probe_commit,
     output  [4:0]   probe_rd_addr,
     output  [31:0]  probe_rd_data,
-    output  [31:0]  probe_instr
+    output  [31:0]  probe_instr,
+    output          probe_bus_fault_valid,
+    output          probe_bus_fault_is_write,
+    output  [31:0]  probe_bus_fault_addr,
+    output   [1:0]  probe_bus_fault_resp
 );
 
     reg use_cache;
@@ -85,17 +89,27 @@ module mycore_wrapper (
     wire [31:0]   ic_req_raddr;
     wire          ic_resp_rvalid;
     wire [127:0]  ic_resp_rdata;
+    wire [1:0]    ic_resp_rresp;
+    wire          ic_fault_valid;
+    wire [31:0]   ic_fault_addr;
+    wire [1:0]    ic_fault_resp;
 
     wire          dc_req_rvalid;
     wire          dc_req_rready;
     wire [31:0]   dc_req_raddr;
     wire          dc_resp_rvalid;
     wire [127:0]  dc_resp_rdata;
+    wire [1:0]    dc_resp_rresp;
     wire          dc_req_wvalid;
     wire          dc_req_wready;
     wire [31:0]   dc_req_waddr;
     wire [127:0]  dc_req_wdata;
     wire          dc_resp_wvalid;
+    wire [1:0]    dc_resp_wresp;
+    wire          dc_fault_valid;
+    wire          dc_fault_is_write;
+    wire [31:0]   dc_fault_addr;
+    wire [1:0]    dc_fault_resp;
 
     assign pm_req_valid = core_pm_req_valid;
     assign pm_req_addr  = core_pm_req_addr;
@@ -139,7 +153,11 @@ module mycore_wrapper (
         .ic_req_rready      (ic_req_rready),
         .ic_req_raddr       (ic_req_raddr),
         .ic_resp_rvalid     (ic_resp_rvalid),
-        .ic_resp_rdata      (ic_resp_rdata)
+        .ic_resp_rdata      (ic_resp_rdata),
+        .ic_resp_rresp      (ic_resp_rresp),
+        .ic_fault_valid     (ic_fault_valid),
+        .ic_fault_addr      (ic_fault_addr),
+        .ic_fault_resp      (ic_fault_resp)
     );
 
     Dcache u_dcache (
@@ -162,14 +180,20 @@ module mycore_wrapper (
         .dc_req_raddr       (dc_req_raddr),
         .dc_resp_rvalid     (dc_resp_rvalid),
         .dc_resp_rdata      (dc_resp_rdata),
+        .dc_resp_rresp      (dc_resp_rresp),
         .dc_req_wvalid      (dc_req_wvalid),
         .dc_req_wready      (dc_req_wready),
         .dc_req_waddr       (dc_req_waddr),
         .dc_req_wdata       (dc_req_wdata),
-        .dc_resp_wvalid     (dc_resp_wvalid)
+        .dc_resp_wvalid     (dc_resp_wvalid),
+        .dc_resp_wresp      (dc_resp_wresp),
+        .dc_fault_valid     (dc_fault_valid),
+        .dc_fault_is_write  (dc_fault_is_write),
+        .dc_fault_addr      (dc_fault_addr),
+        .dc_fault_resp      (dc_fault_resp)
     );
 
-    MEM u_mem (
+    cache_axi_memory_system u_mem (
         .clk                (clk),
         .reset              (reset),
 
@@ -178,18 +202,21 @@ module mycore_wrapper (
         .ic_req_raddr       (ic_req_raddr),
         .ic_resp_rvalid     (ic_resp_rvalid),
         .ic_resp_rdata      (ic_resp_rdata),
+        .ic_resp_rresp      (ic_resp_rresp),
 
         .dc_req_rvalid      (dc_req_rvalid),
         .dc_req_rready      (dc_req_rready),
         .dc_req_raddr       (dc_req_raddr),
         .dc_resp_rvalid     (dc_resp_rvalid),
         .dc_resp_rdata      (dc_resp_rdata),
+        .dc_resp_rresp      (dc_resp_rresp),
 
         .dc_req_wvalid      (dc_req_wvalid),
         .dc_req_wready      (dc_req_wready),
         .dc_req_waddr       (dc_req_waddr),
         .dc_req_wdata       (dc_req_wdata),
-        .dc_resp_wvalid     (dc_resp_wvalid)
+        .dc_resp_wvalid     (dc_resp_wvalid),
+        .dc_resp_wresp      (dc_resp_wresp)
     );
 
     genvar i;
@@ -231,5 +258,34 @@ module mycore_wrapper (
     assign probe_retire = probe_retire_r;
     assign probe_pc = probe_pc_r;
     assign probe_instr = probe_instr_r;
+
+    reg        probe_bus_fault_valid_r;
+    reg        probe_bus_fault_is_write_r;
+    reg [31:0] probe_bus_fault_addr_r;
+    reg  [1:0] probe_bus_fault_resp_r;
+
+    always @(posedge clk or posedge reset) begin
+        if (reset) begin
+            probe_bus_fault_valid_r <= 1'b0;
+            probe_bus_fault_is_write_r <= 1'b0;
+            probe_bus_fault_addr_r <= 32'b0;
+            probe_bus_fault_resp_r <= 2'b00;
+        end
+        else if (!probe_bus_fault_valid_r &&
+                 (dc_fault_valid || ic_fault_valid)) begin
+            probe_bus_fault_valid_r <= 1'b1;
+            probe_bus_fault_is_write_r <= dc_fault_valid
+                                          ? dc_fault_is_write : 1'b0;
+            probe_bus_fault_addr_r <= dc_fault_valid
+                                      ? dc_fault_addr : ic_fault_addr;
+            probe_bus_fault_resp_r <= dc_fault_valid
+                                      ? dc_fault_resp : ic_fault_resp;
+        end
+    end
+
+    assign probe_bus_fault_valid = probe_bus_fault_valid_r;
+    assign probe_bus_fault_is_write = probe_bus_fault_is_write_r;
+    assign probe_bus_fault_addr = probe_bus_fault_addr_r;
+    assign probe_bus_fault_resp = probe_bus_fault_resp_r;
 
 endmodule

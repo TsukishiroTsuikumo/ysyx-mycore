@@ -2,8 +2,11 @@ class cache_test_env extends uvm_env;
 
     `uvm_component_utils(cache_test_env)
 
+    typedef axi_observer #(32, 32, 2, 1, 1) shared_axi_observer_t;
+
     icache_agent      ic_agent;
     dcache_agent      dc_agent;
+    shared_axi_observer_t axi_observer;
     mycore_scoreboard scoreboard;
 
     function new(string name, uvm_component parent);
@@ -14,6 +17,8 @@ class cache_test_env extends uvm_env;
         super.build_phase(phase);
         ic_agent   = icache_agent::type_id::create("ic_agent", this);
         dc_agent   = dcache_agent::type_id::create("dc_agent", this);
+        axi_observer = shared_axi_observer_t::type_id::create(
+            "axi_observer", this);
         scoreboard = mycore_scoreboard::type_id::create("scoreboard", this);
     endfunction
 

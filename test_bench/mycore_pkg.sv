@@ -5,6 +5,7 @@
 package mycore_pkg;
 
     import uvm_pkg::*;
+    import axi_verif_pkg::*;
     `include "uvm_macros.svh"
 
     `ifndef TEST_TIMES

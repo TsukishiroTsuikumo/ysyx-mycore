@@ -21,7 +21,12 @@ module Icache #(
     output  reg              [31:0] ic_req_raddr,
 
     input                           ic_resp_rvalid,
-    input       [PM_LINE_WIDTH-1:0] ic_resp_rdata
+    input       [PM_LINE_WIDTH-1:0] ic_resp_rdata,
+    input                     [1:0] ic_resp_rresp,
+
+    output reg                      ic_fault_valid,
+    output reg               [31:0] ic_fault_addr,
+    output reg                [1:0] ic_fault_resp
 );
 
     function integer clog2(input integer value);
@@ -85,6 +90,7 @@ module Icache #(
     wire selected_miss;
     wire selected_miss_need_wb;
     wire unused_set_sideband;
+    wire ic_resp_error = (ic_resp_rresp != 2'b00);
 
     reg [31:0] selected_read_word;
 
@@ -127,7 +133,8 @@ module Icache #(
                 (current_state == BUSY && refill_done_q && req_index_q == SET_INDEX);
 
             assign set_wr_req[set_idx] =
-                (current_state == RDMEM && ic_resp_rvalid && req_index_q == SET_INDEX);
+                (current_state == RDMEM && ic_resp_rvalid && !ic_resp_error &&
+                 req_index_q == SET_INDEX);
             assign set_wb_tag_used[set_idx] = |set_wb_tag[set_idx];
             assign set_wb_data_used[set_idx] = |set_wb_data[set_idx];
 
@@ -204,7 +211,7 @@ module Icache #(
 
             RDMEM: begin
                 if (ic_resp_rvalid) begin
-                    next_state = BUSY;
+                    next_state = ic_resp_error ? IDLE : BUSY;
                 end
                 else begin
                     next_state = RDMEM;
@@ -240,6 +247,13 @@ module Icache #(
                     ic_req_rvalid = 1'b1;
                 end
                 ic_req_raddr = req_addr_q & ~LINE_MASK;
+                if (ic_resp_rvalid && ic_resp_error) begin
+                    // The core has no architectural bus-error input yet.
+                    // Complete the fetch with a NOP and report the fault on
+                    // the sideband so verification cannot miss it.
+                    pm_resp_valid_out = 1'b1;
+                    pm_resp_data_out = 32'h00000013;
+                end
             end
 
             WRMEM: begin
@@ -262,8 +276,12 @@ module Icache #(
             req_index_q <= {INDEX_WIDTH{1'b0}};
             mem_req_sent <= 1'b0;
             refill_done_q <= 1'b0;
+            ic_fault_valid <= 1'b0;
+            ic_fault_addr <= 32'b0;
+            ic_fault_resp <= 2'b00;
         end
         else begin
+            ic_fault_valid <= 1'b0;
             if (cpu_req_fire) begin
                 req_addr_q <= pm_req_addr_in;
                 req_tag_q <= req_tag_now;
@@ -277,7 +295,12 @@ module Icache #(
             end
             else if (current_state == RDMEM && ic_resp_rvalid) begin
                 mem_req_sent <= 1'b0;
-                refill_done_q <= 1'b1;
+                refill_done_q <= !ic_resp_error;
+                if (ic_resp_error) begin
+                    ic_fault_valid <= 1'b1;
+                    ic_fault_addr <= req_addr_q & ~LINE_MASK;
+                    ic_fault_resp <= ic_resp_rresp;
+                end
             end
             else if (current_state == BUSY && selected_rd_fire) begin
                 refill_done_q <= 1'b0;
