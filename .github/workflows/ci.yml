@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - codex/complete-readme-roadmap
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  reference-model:
+    name: Reference model and regression helpers
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Run reference-model unit tests
+        run: make cmodel-test
+
+      - name: Run reference-model unit tests with UBSan
+        run: >-
+          make cmodel-test
+          C_MODEL_FLAGS="-std=c++17 -Wall -Wextra -I C_model
+          -fsanitize=undefined -fno-sanitize-recover=all"
+
+      - name: Test regression result parsing
+        run: python3 -m unittest scripts.test_regression
+
+      - name: Check Python syntax
+        run: python3 -m py_compile scripts/regression.py scripts/test_regression.py
+
+  rtl-lint:
+    name: Integrated RTL lint
+    runs-on: ubuntu-24.04
+    container:
+      image: verilator/verilator:v5.050
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Report Verilator version
+        run: verilator --version
+
+      - name: Lint core, caches, and AXI memory system
+        run: >-
+          verilator --lint-only --timing -sv -Wall -Wno-fatal
+          --top-module mycore_wrapper -f flist_rtl.f
