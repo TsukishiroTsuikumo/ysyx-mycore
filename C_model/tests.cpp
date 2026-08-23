@@ -330,6 +330,24 @@ void test_x0_is_immutable() {
     expect_rd(core, 0x08, 2, 0xffffffffu, "set_reg cannot change x0");
 }
 
+void test_separate_instruction_and_data_memories() {
+    mycore core;
+    core.reset();
+
+    core.imem_write32(0x00, encode_i(7, 0, 0x0, 1));
+    core.imem_write32(0x04, encode_i(9, 0, 0x0, 2));
+    core.mem_write32(0x00, 0xdeadbeefu);
+    expect_rd(core, 0x00, 1, 7,
+              "separate instruction memory fetch");
+    expect_rd(core, 0x04, 2, 9,
+              "separate instruction memory continued fetch");
+    expect_equal(core.get_reg(1), 7, "architectural register query");
+    expect_equal(core.mem_peek8(0), 0xef, "data memory byte query");
+    expect_equal(core.mem_peek32(0), 0xdeadbeefu,
+                 "data memory word query");
+    expect_equal(core.mem_peek8(4), 0, "unwritten data memory byte query");
+}
+
 } // namespace
 
 int main() {
@@ -340,6 +358,7 @@ int main() {
     test_loads_and_stores();
     test_m_extension();
     test_x0_is_immutable();
+    test_separate_instruction_and_data_memories();
     std::cout << "PASS: C model RV32I/M execution-subset unit tests" << std::endl;
     return 0;
 }

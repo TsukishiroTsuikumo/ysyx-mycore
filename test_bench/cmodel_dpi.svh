@@ -1,8 +1,12 @@
 import "DPI-C" function int cmodel_init_empty();
 import "DPI-C" function int cmodel_init_from_file(input string filename);
 import "DPI-C" function void cmodel_mem_write32(input int unsigned addr, input int unsigned data);
+import "DPI-C" function void cmodel_imem_write32(input int unsigned addr, input int unsigned data);
 import "DPI-C" function void cmodel_set_pc(input int unsigned pc);
 import "DPI-C" function void cmodel_set_reg(input int unsigned idx, input int unsigned value);
+import "DPI-C" function int unsigned cmodel_get_reg(input int unsigned idx);
+import "DPI-C" function int unsigned cmodel_mem_peek8(input int unsigned addr);
+import "DPI-C" function int unsigned cmodel_mem_peek32(input int unsigned addr);
 import "DPI-C" function int cmodel_step(
     output int unsigned pc,
     output int unsigned instr,

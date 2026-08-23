@@ -3,4 +3,8 @@ dut/mycore/controller/issue_control.v
 dut/mycore/fu/execute_lane.v
 dut/mycore/reg/perf_counters.v
 dut/mycore/mycore_dual.v
++incdir+./test_bench
 test_bench/dual_issue/dual_issue_core_tb.sv
+C_model/model.cpp
+C_model/state.cpp
+C_model/cmodel_dpi.cpp

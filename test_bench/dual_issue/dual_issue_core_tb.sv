@@ -9,13 +9,16 @@
 //     --top-module dual_issue_core_tb -GISSUE_WIDTH=1 \
 //     -f test_bench/dual_issue/flist_dual.f
 //
-// No UVM, DPI, external memory image or plusarg is required.  The expected
-// retirement queue is the primary oracle; architectural register checks are
-// deliberately secondary so that dropped, duplicated, reordered and
-// wrong-path retirement records cannot hide behind a correct final value.
+// No UVM, external memory image or plusarg is required.  The C model executes
+// each installed program independently before launch and supplies the ordered
+// retirement, memory-access and final architectural-state oracle.  This keeps
+// the checker independent of issue width and catches dropped, duplicated,
+// reordered and wrong-path retirement records.
 module dual_issue_core_tb #(
     parameter integer ISSUE_WIDTH = 2
 );
+
+    `include "cmodel_dpi.svh"
 
     localparam integer IMEM_WORDS = 512;
     localparam integer DMEM_BYTES = 1024;
@@ -398,8 +401,17 @@ module dual_issue_core_tb #(
     reg expected_commit [0:TRACE_DEPTH-1];
     reg [4:0] expected_rd [0:TRACE_DEPTH-1];
     reg [31:0] expected_data [0:TRACE_DEPTH-1];
+    reg expected_mem_write [0:TRACE_DEPTH-1];
+    reg [31:0] expected_mem_addr [0:TRACE_DEPTH-1];
+    reg [3:0] expected_mem_wstrb [0:TRACE_DEPTH-1];
+    reg [31:0] expected_mem_wdata [0:TRACE_DEPTH-1];
+    reg [31:0] expected_mem_rdata [0:TRACE_DEPTH-1];
+    reg [31:0] expected_arch_regs [0:31];
+    reg [7:0] expected_dmem [0:DMEM_BYTES-1];
     integer expected_count;
     integer expected_index;
+    integer expected_mem_count;
+    integer expected_mem_index;
     reg trace_enable;
     reg trace_complete;
     reg [63:0] trace_hash;
@@ -422,30 +434,6 @@ module dual_issue_core_tb #(
             saw_redirect_with_response <= 1'b1;
     end
 
-    task automatic append_expected(
-        input integer word_index,
-        input [31:0] instruction,
-        input commit,
-        input [4:0] rd,
-        input [31:0] data
-    );
-        begin
-            if ((word_index < 0) || (word_index >= IMEM_WORDS))
-                $fatal(1, "%s: imem word index %0d is out of range",
-                       active_test, word_index);
-            if (expected_count >= TRACE_DEPTH)
-                $fatal(1, "%s: expected trace overflow", active_test);
-
-            imem[word_index] = instruction;
-            expected_pc[expected_count] = word_index * 4;
-            expected_instr[expected_count] = instruction;
-            expected_commit[expected_count] = commit;
-            expected_rd[expected_count] = rd;
-            expected_data[expected_count] = data;
-            expected_count = expected_count + 1;
-        end
-    endtask
-
     task automatic set_instruction(
         input integer word_index,
         input [31:0] instruction
@@ -459,6 +447,148 @@ module dual_issue_core_tb #(
                 halt_pc = word_index * 4;
         end
     endtask
+
+    task automatic build_reference_oracle;
+        integer oracle_word;
+        integer oracle_reg;
+        integer oracle_byte;
+        integer oracle_ok;
+        integer oracle_halt_seen;
+        int unsigned oracle_pc;
+        int unsigned oracle_instr;
+        int unsigned oracle_commit;
+        int unsigned oracle_rd;
+        int unsigned oracle_data;
+        int unsigned oracle_addr;
+        int unsigned oracle_is_read;
+        int unsigned oracle_rdata;
+        int unsigned oracle_is_write;
+        int unsigned oracle_wstrb;
+        int unsigned oracle_wdata;
+        int unsigned oracle_mem_byte;
+        begin
+            if (!cmodel_init_empty())
+                $fatal(1, "%s: C model initialization failed", active_test);
+
+            for (oracle_word = 0; oracle_word < IMEM_WORDS;
+                 oracle_word = oracle_word + 1)
+                cmodel_imem_write32(oracle_word * 4, imem[oracle_word]);
+
+            expected_count = 0;
+            expected_mem_count = 0;
+            oracle_halt_seen = 0;
+            while (!oracle_halt_seen && (expected_count < TRACE_DEPTH)) begin
+                oracle_ok = cmodel_step(
+                    oracle_pc, oracle_instr, oracle_commit, oracle_rd,
+                    oracle_data, oracle_addr, oracle_is_read, oracle_rdata,
+                    oracle_is_write, oracle_wstrb, oracle_wdata);
+                if (!oracle_ok)
+                    $fatal(1, "%s: C model step failed", active_test);
+
+                if ((oracle_pc == halt_pc) &&
+                    (oracle_instr == JAL_HALT)) begin
+                    oracle_halt_seen = 1;
+                end
+                else begin
+                    expected_pc[expected_count] = oracle_pc;
+                    expected_instr[expected_count] = oracle_instr;
+                    expected_commit[expected_count] = oracle_commit[0];
+                    expected_rd[expected_count] = oracle_rd[4:0];
+                    expected_data[expected_count] = oracle_data;
+                    expected_count = expected_count + 1;
+
+                    if (oracle_is_read || oracle_is_write) begin
+                        if (expected_mem_count >= TRACE_DEPTH)
+                            $fatal(1, "%s: reference memory trace overflow",
+                                   active_test);
+                        expected_mem_write[expected_mem_count] =
+                            oracle_is_write[0];
+                        expected_mem_addr[expected_mem_count] = oracle_addr;
+                        expected_mem_wstrb[expected_mem_count] =
+                            oracle_wstrb[3:0];
+                        expected_mem_wdata[expected_mem_count] = oracle_wdata;
+                        expected_mem_rdata[expected_mem_count] = oracle_rdata;
+                        expected_mem_count = expected_mem_count + 1;
+                    end
+                end
+            end
+
+            if (!oracle_halt_seen)
+                $fatal(1,
+                    "%s: C model did not reach halt PC %08x within %0d steps",
+                    active_test, halt_pc, TRACE_DEPTH);
+            if (expected_count == 0)
+                $fatal(1, "%s: C model produced no retirement records",
+                       active_test);
+
+            for (oracle_reg = 0; oracle_reg < 32;
+                 oracle_reg = oracle_reg + 1)
+                expected_arch_regs[oracle_reg] = cmodel_get_reg(oracle_reg);
+            for (oracle_byte = 0; oracle_byte < DMEM_BYTES;
+                 oracle_byte = oracle_byte + 1) begin
+                oracle_mem_byte = cmodel_mem_peek8(oracle_byte);
+                expected_dmem[oracle_byte] = oracle_mem_byte[7:0];
+            end
+
+            $display(
+                "REFERENCE_ORACLE PASS width=%0d test=%s retired=%0d memory=%0d",
+                ISSUE_WIDTH, active_test, expected_count, expected_mem_count);
+        end
+    endtask
+
+    task automatic check_reference_memory_request(input bit actual_write);
+        integer index;
+        begin
+            index = expected_mem_index;
+            if (index >= expected_mem_count)
+                $fatal(1,
+                    "%s: unexpected %s request addr=%08x",
+                    active_test, actual_write ? "write" : "read", dm_req_addr);
+            if (actual_write !== expected_mem_write[index])
+                $fatal(1,
+                    "%s: memory[%0d] kind mismatch got=%s expected=%s",
+                    active_test, index,
+                    actual_write ? "write" : "read",
+                    expected_mem_write[index] ? "write" : "read");
+            if (dm_req_addr !== expected_mem_addr[index])
+                $fatal(1,
+                    "%s: memory[%0d] address got=%08x expected=%08x",
+                    active_test, index, dm_req_addr,
+                    expected_mem_addr[index]);
+            if (actual_write) begin
+                if (dm_req_wstrb !== expected_mem_wstrb[index])
+                    $fatal(1,
+                        "%s: memory[%0d] strobe got=%x expected=%x",
+                        active_test, index, dm_req_wstrb,
+                        expected_mem_wstrb[index]);
+                if (dm_req_wdata !== expected_mem_wdata[index])
+                    $fatal(1,
+                        "%s: memory[%0d] write data got=%08x expected=%08x",
+                        active_test, index, dm_req_wdata,
+                        expected_mem_wdata[index]);
+            end
+            else if (read_dmem_word(dm_req_addr) !==
+                     expected_mem_rdata[index]) begin
+                $fatal(1,
+                    "%s: memory[%0d] read data got=%08x expected=%08x",
+                    active_test, index, read_dmem_word(dm_req_addr),
+                    expected_mem_rdata[index]);
+            end
+            expected_mem_index = expected_mem_index + 1;
+        end
+    endtask
+
+    always @(posedge clk) begin
+        if (reset) begin
+            expected_mem_index = 0;
+        end
+        else begin
+            if (dm_req_rvalid && dm_req_rready)
+                check_reference_memory_request(1'b0);
+            if (dm_req_wvalid && dm_req_wready)
+                check_reference_memory_request(1'b1);
+        end
+    end
 
     task automatic check_retire_lane(input integer lane);
         integer index;
@@ -607,8 +737,7 @@ module dual_issue_core_tb #(
 
     task automatic launch_test;
         begin
-            if (expected_count == 0)
-                $fatal(1, "%s: no expected retirement records", active_test);
+            build_reference_oracle();
             expected_index = 0;
             trace_complete = 1'b0;
             trace_enable = 1'b1;
@@ -635,24 +764,41 @@ module dual_issue_core_tb #(
     endtask
 
     task automatic end_test;
+        integer oracle_reg;
+        integer oracle_byte;
         begin
             trace_enable = 1'b0;
             @(negedge clk);
             #1;
+            if (expected_index != expected_count)
+                $fatal(1, "%s: reference retirement trace incomplete",
+                       active_test);
+            if (expected_mem_index != expected_mem_count)
+                $fatal(1,
+                    "%s: memory trace incomplete got=%0d expected=%0d",
+                    active_test, expected_mem_index, expected_mem_count);
+            for (oracle_reg = 0; oracle_reg < 32;
+                 oracle_reg = oracle_reg + 1) begin
+                if (arch_regfile[oracle_reg] !==
+                    expected_arch_regs[oracle_reg])
+                    $fatal(1,
+                        "%s: final x%0d got=%08x expected=%08x",
+                        active_test, oracle_reg, arch_regfile[oracle_reg],
+                        expected_arch_regs[oracle_reg]);
+            end
+            for (oracle_byte = 0; oracle_byte < DMEM_BYTES;
+                 oracle_byte = oracle_byte + 1) begin
+                if (dmem[oracle_byte] !== expected_dmem[oracle_byte])
+                    $fatal(1,
+                        "%s: final memory[%0d] got=%02x expected=%02x",
+                        active_test, oracle_byte, dmem[oracle_byte],
+                        expected_dmem[oracle_byte]);
+            end
+            $display(
+                "REFERENCE_STATE PASS width=%0d test=%s regs=32 memory_bytes=%0d",
+                ISSUE_WIDTH, active_test, DMEM_BYTES);
             reset = 1'b1;
             repeat (2) @(posedge clk);
-        end
-    endtask
-
-    task automatic expect_reg(
-        input [4:0] reg_addr,
-        input [31:0] expected_value
-    );
-        begin
-            if (arch_regfile[reg_addr] !== expected_value)
-                $fatal(1, "%s: x%0d got=%08x expected=%08x",
-                       active_test, reg_addr, arch_regfile[reg_addr],
-                       expected_value);
         end
     endtask
 
@@ -674,8 +820,7 @@ module dual_issue_core_tb #(
                 rd = (instruction_index % 31) + 1;
                 instruction = insn_addi(
                     rd, 5'd0, instruction_index + 1);
-                append_expected(instruction_index, instruction, 1'b1, rd,
-                                instruction_index + 1);
+                set_instruction(instruction_index, instruction);
             end
             set_instruction(128, insn_jal_halt());
 
@@ -727,17 +872,15 @@ module dual_issue_core_tb #(
         begin
             begin_test("raw");
             instruction = insn_addi(5'd1, 5'd0, 32'sd5);
-            append_expected(0, instruction, 1'b1, 5'd1, 32'd5);
+            set_instruction(0, instruction);
             instruction = insn_addi(5'd2, 5'd1, 32'sd3);
-            append_expected(1, instruction, 1'b1, 5'd2, 32'd8);
+            set_instruction(1, instruction);
             set_instruction(2, insn_jal_halt());
 
             launch_test();
             wait_for_trace(100);
             if ((ISSUE_WIDTH == 2) && saw_raw_illegal_dual)
                 $fatal(1, "raw: dependent pc=0/4 pair retired together");
-            expect_reg(5'd1, 32'd5);
-            expect_reg(5'd2, 32'd8);
             end_test();
         end
     endtask
@@ -747,25 +890,21 @@ module dual_issue_core_tb #(
         begin
             begin_test("waw-war-x0");
             instruction = insn_addi(5'd5, 5'd0, 32'sd11);
-            append_expected(0, instruction, 1'b1, 5'd5, 32'd11);
+            set_instruction(0, instruction);
             instruction = insn_addi(5'd5, 5'd0, 32'sd22);
-            append_expected(1, instruction, 1'b1, 5'd5, 32'd22);
+            set_instruction(1, instruction);
             instruction = insn_addi(5'd7, 5'd5, 32'sd1);
-            append_expected(2, instruction, 1'b1, 5'd7, 32'd23);
+            set_instruction(2, instruction);
             instruction = insn_addi(5'd5, 5'd0, 32'sd33);
-            append_expected(3, instruction, 1'b1, 5'd5, 32'd33);
+            set_instruction(3, instruction);
             instruction = insn_addi(5'd0, 5'd0, 32'sd99);
-            append_expected(4, instruction, 1'b1, 5'd0, 32'b0);
+            set_instruction(4, instruction);
             instruction = insn_addi(5'd8, 5'd0, 32'sd9);
-            append_expected(5, instruction, 1'b1, 5'd8, 32'd9);
+            set_instruction(5, instruction);
             set_instruction(6, insn_jal_halt());
 
             launch_test();
             wait_for_trace(120);
-            expect_reg(5'd0, 32'b0);
-            expect_reg(5'd5, 32'd33);
-            expect_reg(5'd7, 32'd23);
-            expect_reg(5'd8, 32'd9);
             if (ISSUE_WIDTH == 2) begin
                 if (!saw_waw_dual)
                     $fatal(1, "waw-war-x0: WAW pair did not dual retire");
@@ -783,56 +922,44 @@ module dual_issue_core_tb #(
         begin
             begin_test("rv32m");
             instruction = enc_u(20'h80000, 5'd1, OPCODE_LUI);
-            append_expected(0, instruction, 1'b1, 5'd1, 32'h8000_0000);
+            set_instruction(0, instruction);
             instruction = insn_addi(5'd2, 5'd0, -32'sd1);
-            append_expected(1, instruction, 1'b1, 5'd2, 32'hffff_ffff);
+            set_instruction(1, instruction);
 
             instruction = enc_r(7'b0000001, 5'd2, 5'd1, 3'b100,
                                 5'd3, OPCODE_OP);
-            append_expected(2, instruction, 1'b1, 5'd3, 32'h8000_0000);
+            set_instruction(2, instruction);
             instruction = enc_r(7'b0000001, 5'd2, 5'd1, 3'b110,
                                 5'd4, OPCODE_OP);
-            append_expected(3, instruction, 1'b1, 5'd4, 32'b0);
+            set_instruction(3, instruction);
             instruction = enc_r(7'b0000001, 5'd0, 5'd1, 3'b100,
                                 5'd5, OPCODE_OP);
-            append_expected(4, instruction, 1'b1, 5'd5, 32'hffff_ffff);
+            set_instruction(4, instruction);
             instruction = enc_r(7'b0000001, 5'd0, 5'd1, 3'b110,
                                 5'd6, OPCODE_OP);
-            append_expected(5, instruction, 1'b1, 5'd6, 32'h8000_0000);
+            set_instruction(5, instruction);
             instruction = enc_r(7'b0000001, 5'd0, 5'd1, 3'b101,
                                 5'd7, OPCODE_OP);
-            append_expected(6, instruction, 1'b1, 5'd7, 32'hffff_ffff);
+            set_instruction(6, instruction);
             instruction = enc_r(7'b0000001, 5'd0, 5'd1, 3'b111,
                                 5'd8, OPCODE_OP);
-            append_expected(7, instruction, 1'b1, 5'd8, 32'h8000_0000);
+            set_instruction(7, instruction);
             instruction = enc_r(7'b0000001, 5'd2, 5'd1, 3'b000,
                                 5'd9, OPCODE_OP);
-            append_expected(8, instruction, 1'b1, 5'd9, 32'h8000_0000);
+            set_instruction(8, instruction);
             instruction = enc_r(7'b0000001, 5'd2, 5'd1, 3'b001,
                                 5'd10, OPCODE_OP);
-            append_expected(9, instruction, 1'b1, 5'd10, 32'h0000_0000);
+            set_instruction(9, instruction);
             instruction = enc_r(7'b0000001, 5'd1, 5'd2, 3'b010,
                                 5'd11, OPCODE_OP);
-            append_expected(10, instruction, 1'b1, 5'd11,
-                            32'hffff_ffff);
+            set_instruction(10, instruction);
             instruction = enc_r(7'b0000001, 5'd2, 5'd1, 3'b011,
                                 5'd12, OPCODE_OP);
-            append_expected(11, instruction, 1'b1, 5'd12,
-                            32'h7fff_ffff);
+            set_instruction(11, instruction);
             set_instruction(12, insn_jal_halt());
 
             launch_test();
             wait_for_trace(200);
-            expect_reg(5'd3, 32'h8000_0000);
-            expect_reg(5'd4, 32'b0);
-            expect_reg(5'd5, 32'hffff_ffff);
-            expect_reg(5'd6, 32'h8000_0000);
-            expect_reg(5'd7, 32'hffff_ffff);
-            expect_reg(5'd8, 32'h8000_0000);
-            expect_reg(5'd9, 32'h8000_0000);
-            expect_reg(5'd10, 32'b0);
-            expect_reg(5'd11, 32'hffff_ffff);
-            expect_reg(5'd12, 32'h7fff_ffff);
             end_test();
         end
     endtask
@@ -843,30 +970,30 @@ module dual_issue_core_tb #(
             begin_test("load-store");
             dm_backpressure_enable = 1'b1;
             instruction = insn_addi(5'd1, 5'd0, 32'sd64);
-            append_expected(0, instruction, 1'b1, 5'd1, 32'd64);
+            set_instruction(0, instruction);
             instruction = insn_addi(5'd2, 5'd0, -32'sd1);
-            append_expected(1, instruction, 1'b1, 5'd2, 32'hffff_ffff);
+            set_instruction(1, instruction);
             instruction = enc_s(32'sd0, 5'd2, 5'd1, 3'b000);
-            append_expected(2, instruction, 1'b0, 5'd0, 32'b0);
+            set_instruction(2, instruction);
             instruction = enc_s(32'sd2, 5'd2, 5'd1, 3'b001);
-            append_expected(3, instruction, 1'b0, 5'd0, 32'b0);
+            set_instruction(3, instruction);
             instruction = enc_s(32'sd4, 5'd2, 5'd1, 3'b010);
-            append_expected(4, instruction, 1'b0, 5'd0, 32'b0);
+            set_instruction(4, instruction);
             instruction = enc_i(32'sd0, 5'd1, 3'b000, 5'd3,
                                 OPCODE_LOAD);
-            append_expected(5, instruction, 1'b1, 5'd3, 32'hffff_ffff);
+            set_instruction(5, instruction);
             instruction = enc_i(32'sd0, 5'd1, 3'b100, 5'd4,
                                 OPCODE_LOAD);
-            append_expected(6, instruction, 1'b1, 5'd4, 32'h0000_00ff);
+            set_instruction(6, instruction);
             instruction = enc_i(32'sd2, 5'd1, 3'b001, 5'd5,
                                 OPCODE_LOAD);
-            append_expected(7, instruction, 1'b1, 5'd5, 32'hffff_ffff);
+            set_instruction(7, instruction);
             instruction = enc_i(32'sd2, 5'd1, 3'b101, 5'd6,
                                 OPCODE_LOAD);
-            append_expected(8, instruction, 1'b1, 5'd6, 32'h0000_ffff);
+            set_instruction(8, instruction);
             instruction = enc_i(32'sd4, 5'd1, 3'b010, 5'd7,
                                 OPCODE_LOAD);
-            append_expected(9, instruction, 1'b1, 5'd7, 32'hffff_ffff);
+            set_instruction(9, instruction);
             set_instruction(10, insn_jal_halt());
 
             launch_test();
@@ -881,16 +1008,6 @@ module dual_issue_core_tb #(
                 $fatal(1, "load-store: request backpressure was not exercised");
             if (perf_memory_stall_cycle_count < 8)
                 $fatal(1, "load-store: delayed responses were not exercised");
-            if ((dmem[64] !== 8'hff) || (dmem[66] !== 8'hff) ||
-                (dmem[67] !== 8'hff) || (dmem[68] !== 8'hff) ||
-                (dmem[69] !== 8'hff) || (dmem[70] !== 8'hff) ||
-                (dmem[71] !== 8'hff))
-                $fatal(1, "load-store: byte strobes or write data are wrong");
-            expect_reg(5'd3, 32'hffff_ffff);
-            expect_reg(5'd4, 32'h0000_00ff);
-            expect_reg(5'd5, 32'hffff_ffff);
-            expect_reg(5'd6, 32'h0000_ffff);
-            expect_reg(5'd7, 32'hffff_ffff);
             end_test();
         end
     endtask
@@ -906,11 +1023,11 @@ module dual_issue_core_tb #(
             // zero-strobe memory transaction.
             instruction = enc_i(32'sd0, 5'd0, 3'b011, 5'd3,
                                 OPCODE_LOAD);
-            append_expected(0, instruction, 1'b0, 5'd0, 32'b0);
+            set_instruction(0, instruction);
             instruction = enc_s(32'sd0, 5'd3, 5'd0, 3'b011);
-            append_expected(1, instruction, 1'b0, 5'd0, 32'b0);
+            set_instruction(1, instruction);
             instruction = insn_addi(5'd9, 5'd0, 32'sd9);
-            append_expected(2, instruction, 1'b1, 5'd9, 32'd9);
+            set_instruction(2, instruction);
             set_instruction(3, insn_jal_halt());
 
             launch_test();
@@ -919,8 +1036,6 @@ module dual_issue_core_tb #(
                 (dm_write_handshake_count != 0))
                 $fatal(1,
                     "illegal-lsu: reserved encoding launched a DM request");
-            expect_reg(5'd3, 32'b0);
-            expect_reg(5'd9, 32'd9);
             end_test();
         end
     endtask
@@ -930,46 +1045,37 @@ module dual_issue_core_tb #(
         begin
             begin_test("control-flow");
             instruction = insn_addi(5'd1, 5'd0, 32'sd1);
-            append_expected(0, instruction, 1'b1, 5'd1, 32'd1);
+            set_instruction(0, instruction);
             instruction = enc_b(32'sd12, 5'd1, 5'd1, 3'b000);
-            append_expected(1, instruction, 1'b0, 5'd0, 32'b0);
+            set_instruction(1, instruction);
 
             set_instruction(2, insn_addi(5'd20, 5'd0, 32'sd99));
             set_instruction(3, insn_addi(5'd21, 5'd0, 32'sd99));
 
             instruction = enc_j(32'sd12, 5'd2);
-            append_expected(4, instruction, 1'b1, 5'd2, 32'd20);
+            set_instruction(4, instruction);
             // Wrong-path store: a redirect bug must be observable as a DM
             // handshake, not merely as an overwritten register value.
             set_instruction(5, enc_s(32'sd0, 5'd1, 5'd0, 3'b010));
             set_instruction(6, insn_addi(5'd23, 5'd0, 32'sd99));
 
             instruction = enc_u(20'h00000, 5'd3, OPCODE_AUIPC);
-            append_expected(7, instruction, 1'b1, 5'd3, 32'd28);
+            set_instruction(7, instruction);
             instruction = insn_addi(5'd3, 5'd3, 32'sd16);
-            append_expected(8, instruction, 1'b1, 5'd3, 32'd44);
+            set_instruction(8, instruction);
             instruction = enc_i(32'sd0, 5'd3, 3'b000, 5'd4,
                                 OPCODE_JALR);
-            append_expected(9, instruction, 1'b1, 5'd4, 32'd40);
+            set_instruction(9, instruction);
             set_instruction(10, insn_addi(5'd24, 5'd0, 32'sd99));
 
             instruction = enc_b(32'sd8, 5'd0, 5'd0, 3'b001);
-            append_expected(11, instruction, 1'b0, 5'd0, 32'b0);
+            set_instruction(11, instruction);
             instruction = insn_addi(5'd5, 5'd0, 32'sd55);
-            append_expected(12, instruction, 1'b1, 5'd5, 32'd55);
+            set_instruction(12, instruction);
             set_instruction(13, insn_jal_halt());
 
             launch_test();
             wait_for_trace(250);
-            expect_reg(5'd2, 32'd20);
-            expect_reg(5'd3, 32'd44);
-            expect_reg(5'd4, 32'd40);
-            expect_reg(5'd5, 32'd55);
-            expect_reg(5'd20, 32'b0);
-            expect_reg(5'd21, 32'b0);
-            expect_reg(5'd22, 32'b0);
-            expect_reg(5'd23, 32'b0);
-            expect_reg(5'd24, 32'b0);
             if ((dm_read_handshake_count != 0) ||
                 (dm_write_handshake_count != 0))
                 $fatal(1,

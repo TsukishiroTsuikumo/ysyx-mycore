@@ -5,11 +5,13 @@
 //               -> scalar D-cache -> data-line AXI master
 //               -> shared AXI RAM
 //
-// The retirement queue is the architectural oracle.  Traffic checks prove
-// that the program exercised both AXI read masters, read arbitration, D-cache
-// hits/misses and dirty replacement rather than merely reaching the expected
-// register state through a stub memory.
+// The C model independently executes the installed program to generate the
+// retirement, core-side data-request and final-register oracle.  Traffic
+// checks additionally prove that both AXI read masters, read arbitration,
+// D-cache hits/misses and dirty replacement were really exercised.
 module dual_axi_smoke_tb;
+
+    `include "cmodel_dpi.svh"
 
     localparam integer TRACE_DEPTH = 64;
 
@@ -238,45 +240,20 @@ module dual_axi_smoke_tb;
     reg        expected_commit [0:TRACE_DEPTH-1];
     reg [4:0]  expected_rd [0:TRACE_DEPTH-1];
     reg [31:0] expected_data [0:TRACE_DEPTH-1];
+    reg expected_mem_write [0:TRACE_DEPTH-1];
+    reg [31:0] expected_mem_addr [0:TRACE_DEPTH-1];
+    reg [3:0] expected_mem_wstrb [0:TRACE_DEPTH-1];
+    reg [31:0] expected_mem_wdata [0:TRACE_DEPTH-1];
+    reg [31:0] expected_arch_regs [0:31];
     integer expected_count;
     integer expected_index;
+    integer expected_mem_count;
+    integer expected_mem_index;
     reg trace_enable;
     reg trace_complete;
     integer dual_retire_observed;
 
-    task automatic append_expected(
-        input integer word_index,
-        input [31:0] instruction,
-        input commit,
-        input [4:0] rd,
-        input [31:0] data
-    );
-        begin
-            if (expected_count >= TRACE_DEPTH)
-                $fatal(1, "dual AXI expected trace overflow");
-            expected_pc[expected_count] = word_index * 4;
-            expected_instr[expected_count] = instruction;
-            expected_commit[expected_count] = commit;
-            expected_rd[expected_count] = rd;
-            expected_data[expected_count] = data;
-            expected_count = expected_count + 1;
-        end
-    endtask
-
-    task automatic install_expected(
-        input integer word_index,
-        input [31:0] instruction,
-        input commit,
-        input [4:0] rd,
-        input [31:0] data
-    );
-        begin
-            dut.write_word(word_index * 4, instruction);
-            append_expected(word_index, instruction, commit, rd, data);
-        end
-    endtask
-
-    task automatic install_only(
+    task automatic install_instruction(
         input integer word_index,
         input [31:0] instruction
     );
@@ -284,6 +261,124 @@ module dual_axi_smoke_tb;
             dut.write_word(word_index * 4, instruction);
         end
     endtask
+
+    task automatic build_reference_oracle;
+        integer oracle_word;
+        integer oracle_reg;
+        integer oracle_ok;
+        integer oracle_halt_seen;
+        reg [31:0] oracle_word_data;
+        int unsigned oracle_pc;
+        int unsigned oracle_instr;
+        int unsigned oracle_commit;
+        int unsigned oracle_rd;
+        int unsigned oracle_data;
+        int unsigned oracle_addr;
+        int unsigned oracle_is_read;
+        int unsigned oracle_rdata;
+        int unsigned oracle_is_write;
+        int unsigned oracle_wstrb;
+        int unsigned oracle_wdata;
+        begin
+            if (!cmodel_init_empty())
+                $fatal(1, "dual AXI C model initialization failed");
+            for (oracle_word = 0; oracle_word < TRACE_DEPTH;
+                 oracle_word = oracle_word + 1) begin
+                dut.read_word(oracle_word * 4, oracle_word_data);
+                cmodel_imem_write32(oracle_word * 4, oracle_word_data);
+            end
+
+            expected_count = 0;
+            expected_mem_count = 0;
+            oracle_halt_seen = 0;
+            while (!oracle_halt_seen && (expected_count < TRACE_DEPTH)) begin
+                oracle_ok = cmodel_step(
+                    oracle_pc, oracle_instr, oracle_commit, oracle_rd,
+                    oracle_data, oracle_addr, oracle_is_read, oracle_rdata,
+                    oracle_is_write, oracle_wstrb, oracle_wdata);
+                if (!oracle_ok)
+                    $fatal(1, "dual AXI C model step failed");
+
+                expected_pc[expected_count] = oracle_pc;
+                expected_instr[expected_count] = oracle_instr;
+                expected_commit[expected_count] = oracle_commit[0];
+                expected_rd[expected_count] = oracle_rd[4:0];
+                expected_data[expected_count] = oracle_data;
+                expected_count = expected_count + 1;
+
+                if (oracle_is_read || oracle_is_write) begin
+                    if (expected_mem_count >= TRACE_DEPTH)
+                        $fatal(1, "dual AXI reference memory trace overflow");
+                    expected_mem_write[expected_mem_count] =
+                        oracle_is_write[0];
+                    expected_mem_addr[expected_mem_count] = oracle_addr;
+                    expected_mem_wstrb[expected_mem_count] =
+                        oracle_wstrb[3:0];
+                    expected_mem_wdata[expected_mem_count] = oracle_wdata;
+                    expected_mem_count = expected_mem_count + 1;
+                end
+
+                if (oracle_instr == JAL_HALT)
+                    oracle_halt_seen = 1;
+            end
+
+            if (!oracle_halt_seen)
+                $fatal(1,
+                    "dual AXI C model did not reach terminal self-loop");
+            for (oracle_reg = 0; oracle_reg < 32;
+                 oracle_reg = oracle_reg + 1)
+                expected_arch_regs[oracle_reg] = cmodel_get_reg(oracle_reg);
+
+            $display(
+                "DUAL_AXI_REFERENCE_ORACLE PASS retired=%0d memory=%0d",
+                expected_count, expected_mem_count);
+        end
+    endtask
+
+    task automatic check_reference_memory_request(input bit actual_write);
+        integer index;
+        begin
+            index = expected_mem_index;
+            if (index >= expected_mem_count)
+                $fatal(1,
+                    "unexpected dual AXI core memory request write=%0b addr=%08x",
+                    actual_write, dut.core_dm_req_addr);
+            if (actual_write !== expected_mem_write[index])
+                $fatal(1,
+                    "dual AXI memory[%0d] kind got=%0b expected=%0b",
+                    index, actual_write, expected_mem_write[index]);
+            if (dut.core_dm_req_addr !== expected_mem_addr[index])
+                $fatal(1,
+                    "dual AXI memory[%0d] address got=%08x expected=%08x",
+                    index, dut.core_dm_req_addr,
+                    expected_mem_addr[index]);
+            if (actual_write) begin
+                if (dut.core_dm_req_wstrb !== expected_mem_wstrb[index])
+                    $fatal(1,
+                        "dual AXI memory[%0d] strobe got=%x expected=%x",
+                        index, dut.core_dm_req_wstrb,
+                        expected_mem_wstrb[index]);
+                if (dut.core_dm_req_wdata !== expected_mem_wdata[index])
+                    $fatal(1,
+                        "dual AXI memory[%0d] data got=%08x expected=%08x",
+                        index, dut.core_dm_req_wdata,
+                        expected_mem_wdata[index]);
+            end
+            expected_mem_index = expected_mem_index + 1;
+        end
+    endtask
+
+    always @(posedge clk) begin
+        if (reset) begin
+            expected_mem_index = 0;
+        end
+        else begin
+            if (dut.core_dm_req_rvalid && dut.core_dm_req_rready)
+                check_reference_memory_request(1'b0);
+            if (dut.core_dm_req_wvalid && dut.core_dm_req_wready)
+                check_reference_memory_request(1'b1);
+        end
+    end
 
     task automatic check_retire_lane(input integer lane);
         integer index;
@@ -409,90 +504,81 @@ module dual_axi_smoke_tb;
 
     reg [31:0] instruction;
     reg [31:0] ram_word;
+    reg [31:0] oracle_ram_word;
     integer timeout_cycles;
+    integer reg_index;
 
     task automatic build_program;
         begin
             expected_count = 0;
 
             instruction = insn_lui(5'd1, 20'h00002);
-            install_expected(0, instruction, 1'b1, 5'd1, 32'h0000_2000);
+            install_instruction(0, instruction);
             instruction = insn_addi(5'd2, 5'd0, 17);
-            install_expected(1, instruction, 1'b1, 5'd2, 32'd17);
+            install_instruction(1, instruction);
 
             // Five dirty lines separated by 0x100 map to the same one of the
             // 16 D-cache sets.  The fifth access must evict a dirty way.
             instruction = insn_sw(5'd2, 5'd1, 0);
-            install_expected(2, instruction, 1'b0, 5'd0, 32'b0);
+            install_instruction(2, instruction);
             instruction = insn_addi(5'd1, 5'd1, 256);
-            install_expected(3, instruction, 1'b1, 5'd1, 32'h0000_2100);
+            install_instruction(3, instruction);
             instruction = insn_addi(5'd2, 5'd2, 1);
-            install_expected(4, instruction, 1'b1, 5'd2, 32'd18);
+            install_instruction(4, instruction);
             instruction = insn_sw(5'd2, 5'd1, 0);
-            install_expected(5, instruction, 1'b0, 5'd0, 32'b0);
+            install_instruction(5, instruction);
             instruction = insn_addi(5'd1, 5'd1, 256);
-            install_expected(6, instruction, 1'b1, 5'd1, 32'h0000_2200);
+            install_instruction(6, instruction);
             instruction = insn_addi(5'd2, 5'd2, 1);
-            install_expected(7, instruction, 1'b1, 5'd2, 32'd19);
+            install_instruction(7, instruction);
             instruction = insn_sw(5'd2, 5'd1, 0);
-            install_expected(8, instruction, 1'b0, 5'd0, 32'b0);
+            install_instruction(8, instruction);
             instruction = insn_addi(5'd1, 5'd1, 256);
-            install_expected(9, instruction, 1'b1, 5'd1, 32'h0000_2300);
+            install_instruction(9, instruction);
             instruction = insn_addi(5'd2, 5'd2, 1);
-            install_expected(10, instruction, 1'b1, 5'd2, 32'd20);
+            install_instruction(10, instruction);
             instruction = insn_sw(5'd2, 5'd1, 0);
-            install_expected(11, instruction, 1'b0, 5'd0, 32'b0);
+            install_instruction(11, instruction);
             instruction = insn_addi(5'd1, 5'd1, 256);
-            install_expected(12, instruction, 1'b1, 5'd1, 32'h0000_2400);
+            install_instruction(12, instruction);
             instruction = insn_addi(5'd2, 5'd2, 1);
-            install_expected(13, instruction, 1'b1, 5'd2, 32'd21);
+            install_instruction(13, instruction);
             instruction = insn_sw(5'd2, 5'd1, 0);
-            install_expected(14, instruction, 1'b0, 5'd0, 32'b0);
+            install_instruction(14, instruction);
 
             // Hit the newest line, then reload the first evicted dirty line.
             // The latter miss also forces a second dirty writeback.
             instruction = insn_lw(5'd3, 5'd1, 0);
-            install_expected(15, instruction, 1'b1, 5'd3, 32'd21);
+            install_instruction(15, instruction);
             instruction = insn_lui(5'd4, 20'h00002);
-            install_expected(16, instruction, 1'b1, 5'd4, 32'h0000_2000);
+            install_instruction(16, instruction);
             instruction = insn_lw(5'd5, 5'd4, 0);
-            install_expected(17, instruction, 1'b1, 5'd5, 32'd17);
+            install_instruction(17, instruction);
 
             // M extension plus taken branch and JAL wrong-path flushing.
             instruction = insn_mul(5'd6, 5'd3, 5'd5);
-            install_expected(18, instruction, 1'b1, 5'd6, 32'd357);
+            install_instruction(18, instruction);
             instruction = insn_addi(5'd7, 5'd0, 1);
-            install_expected(19, instruction, 1'b1, 5'd7, 32'd1);
+            install_instruction(19, instruction);
             instruction = insn_beq(5'd7, 5'd7, 8);
-            install_expected(20, instruction, 1'b0, 5'd0, 32'b0);
-            install_only(21, insn_addi(5'd8, 5'd0, 99));
+            install_instruction(20, instruction);
+            install_instruction(21, insn_addi(5'd8, 5'd0, 99));
             instruction = enc_j(8, 5'd9);
-            install_expected(22, instruction, 1'b1, 5'd9, 32'd92);
-            install_only(23, insn_addi(5'd10, 5'd0, 77));
+            install_instruction(22, instruction);
+            install_instruction(23, insn_addi(5'd10, 5'd0, 77));
 
             instruction = insn_add(5'd11, 5'd6, 5'd5);
-            install_expected(24, instruction, 1'b1, 5'd11, 32'd374);
+            install_instruction(24, instruction);
             instruction = insn_sw(5'd11, 5'd4, 4);
-            install_expected(25, instruction, 1'b0, 5'd0, 32'b0);
+            install_instruction(25, instruction);
             instruction = insn_lw(5'd12, 5'd4, 4);
-            install_expected(26, instruction, 1'b1, 5'd12, 32'd374);
+            install_instruction(26, instruction);
             instruction = insn_addi(5'd13, 5'd0, 42);
-            install_expected(27, instruction, 1'b1, 5'd13, 32'd42);
+            install_instruction(27, instruction);
             instruction = insn_bne(5'd13, 5'd0, 8);
-            install_expected(28, instruction, 1'b0, 5'd0, 32'b0);
-            install_only(29, insn_addi(5'd14, 5'd0, 66));
-            install_expected(30, JAL_HALT, 1'b1, 5'd0, 32'b0);
-        end
-    endtask
-
-    task automatic check_reg(
-        input [4:0] reg_addr,
-        input [31:0] expected_value
-    );
-        begin
-            if (arch_regfile[reg_addr] !== expected_value)
-                $fatal(1, "x%0d got=%08x expected=%08x",
-                       reg_addr, arch_regfile[reg_addr], expected_value);
+            install_instruction(28, instruction);
+            install_instruction(29, insn_addi(5'd14, 5'd0, 66));
+            install_instruction(30, JAL_HALT);
         end
     endtask
 
@@ -509,6 +595,7 @@ module dual_axi_smoke_tb;
         repeat (3) @(posedge clk);
         @(negedge clk);
         build_program();
+        build_reference_oracle();
         expected_index = 0;
         trace_enable = 1'b1;
         reset = 1'b0;
@@ -530,6 +617,10 @@ module dual_axi_smoke_tb;
                    sticky_bus_fault_resp);
         if (expected_index != expected_count)
             $fatal(1, "retirement trace incomplete");
+        if (expected_mem_index != expected_mem_count)
+            $fatal(1,
+                "core memory trace incomplete got=%0d expected=%0d",
+                expected_mem_index, expected_mem_count);
         if (dual_retire_observed == 0 ||
             perf_dual_issue_cycle_count == 0 ||
             perf_dual_retire_cycle_count == 0)
@@ -550,31 +641,34 @@ module dual_axi_smoke_tb;
                    "shared AXI read arbitration saw no I/D overlap contention=%0d active=%0d",
                    id_read_contention_cycles, id_active_overlap_cycles);
 
-        check_reg(5'd1, 32'h0000_2400);
-        check_reg(5'd2, 32'd21);
-        check_reg(5'd3, 32'd21);
-        check_reg(5'd4, 32'h0000_2000);
-        check_reg(5'd5, 32'd17);
-        check_reg(5'd6, 32'd357);
-        check_reg(5'd7, 32'd1);
-        check_reg(5'd8, 32'b0);
-        check_reg(5'd9, 32'd92);
-        check_reg(5'd10, 32'b0);
-        check_reg(5'd11, 32'd374);
-        check_reg(5'd12, 32'd374);
-        check_reg(5'd13, 32'd42);
-        check_reg(5'd14, 32'b0);
+        for (reg_index = 0; reg_index < 32;
+             reg_index = reg_index + 1) begin
+            if (arch_regfile[reg_index] !==
+                expected_arch_regs[reg_index])
+                $fatal(1,
+                    "dual AXI final x%0d got=%08x expected=%08x",
+                    reg_index, arch_regfile[reg_index],
+                    expected_arch_regs[reg_index]);
+        end
 
         // These two lines were made dirty, evicted, and acknowledged before
         // the final halt.  Read the backing RAM, not the resident D-cache.
         dut.read_word(32'h0000_2000, ram_word);
-        if (ram_word !== 32'd17)
-            $fatal(1, "RAM writeback 0x2000 got=%08x expected=00000011",
-                   ram_word);
+        oracle_ram_word = cmodel_mem_peek32(32'h0000_2000);
+        if (ram_word !== oracle_ram_word)
+            $fatal(1,
+                "RAM writeback 0x2000 got=%08x reference=%08x",
+                ram_word, oracle_ram_word);
         dut.read_word(32'h0000_2100, ram_word);
-        if (ram_word !== 32'd18)
-            $fatal(1, "RAM writeback 0x2100 got=%08x expected=00000012",
-                   ram_word);
+        oracle_ram_word = cmodel_mem_peek32(32'h0000_2100);
+        if (ram_word !== oracle_ram_word)
+            $fatal(1,
+                "RAM writeback 0x2100 got=%08x reference=%08x",
+                ram_word, oracle_ram_word);
+
+        $display(
+            "DUAL_AXI_REFERENCE_STATE PASS regs=32 memory_requests=%0d",
+            expected_mem_count);
 
         $display("DUAL_AXI_INTEGRATION PASS");
         $finish;

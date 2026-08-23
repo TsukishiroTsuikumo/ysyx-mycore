@@ -94,6 +94,11 @@ uint8_t memory::read8(uint32_t addr) const {
     return ((addr & 0x3u) == 0) ? 0x13 : 0x00;
 }
 
+uint8_t memory::peek8(uint32_t addr) const {
+    const auto it = mem.find(addr);
+    return (it != mem.end()) ? it->second : 0;
+}
+
 uint16_t memory::read16(uint32_t addr) const {
     return (static_cast<uint16_t>(read8(addr + 1)) << 8) | read8(addr);
 }

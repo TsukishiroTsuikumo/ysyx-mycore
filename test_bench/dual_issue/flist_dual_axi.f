@@ -1,4 +1,5 @@
 +incdir+./dut/axi
++incdir+./test_bench
 
 dut/mycore/front/fetch_frontend.v
 dut/mycore/controller/issue_control.v
@@ -18,3 +19,6 @@ dut/axi/cache_axi_memory_system.v
 
 test_bench/wrap/mycore_dual_axi_wrapper.sv
 test_bench/dual_issue/dual_axi_smoke_tb.sv
+C_model/model.cpp
+C_model/state.cpp
+C_model/cmodel_dpi.cpp

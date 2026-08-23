@@ -1,7 +1,12 @@
 `timescale 1ns/1ps
 
 module ooo_core_tb;
-    localparam integer EXPECTED_RETIRE = 40;
+    localparam integer REFERENCE_TRACE_DEPTH = 256;
+    localparam integer DIRECTED_RETIRE_COUNT = 40;
+    localparam logic [31:0] JAL_HALT = 32'h0000_006f;
+    localparam logic [31:0] HALT_PC = 32'd184;
+
+    `include "cmodel_dpi.svh"
 
     logic clk;
     logic reset;
@@ -251,6 +256,20 @@ module ooo_core_tb;
     integer byte_i;
     assign dmem_req_ready = !dmem_pending_q && (cycle_count[1:0] != 2'b01);
 
+    function automatic logic [31:0] read_data_word(
+        input logic [31:0] byte_addr
+    );
+        begin
+            if (byte_addr <= 32'd252)
+                read_data_word = {data_mem[byte_addr+3],
+                                  data_mem[byte_addr+2],
+                                  data_mem[byte_addr+1],
+                                  data_mem[byte_addr]};
+            else
+                read_data_word = 32'b0;
+        end
+    endfunction
+
     always_ff @(posedge clk or posedge reset) begin
         if (reset) begin
             dmem_pending_q <= 1'b0;
@@ -312,67 +331,153 @@ module ooo_core_tb;
         end
     end
 
-    logic [31:0] expected_pc [0:EXPECTED_RETIRE-1];
-    logic expected_write [0:EXPECTED_RETIRE-1];
-    logic [4:0] expected_rd [0:EXPECTED_RETIRE-1];
-    logic [31:0] expected_value [0:EXPECTED_RETIRE-1];
+    logic [31:0] expected_pc [0:REFERENCE_TRACE_DEPTH-1];
+    logic [31:0] expected_instr [0:REFERENCE_TRACE_DEPTH-1];
+    logic expected_write [0:REFERENCE_TRACE_DEPTH-1];
+    logic [4:0] expected_rd [0:REFERENCE_TRACE_DEPTH-1];
+    logic [31:0] expected_value [0:REFERENCE_TRACE_DEPTH-1];
+    logic expected_mem_write [0:REFERENCE_TRACE_DEPTH-1];
+    logic [31:0] expected_mem_addr [0:REFERENCE_TRACE_DEPTH-1];
+    logic [3:0] expected_mem_wstrb [0:REFERENCE_TRACE_DEPTH-1];
+    logic [31:0] expected_mem_wdata [0:REFERENCE_TRACE_DEPTH-1];
+    logic [31:0] expected_mem_rdata [0:REFERENCE_TRACE_DEPTH-1];
+    logic [31:0] expected_arch_regs [0:31];
+    logic [7:0] expected_data_mem [0:255];
+    integer expected_count;
+    integer expected_mem_count;
+    integer expected_mem_index;
 
-    task automatic expect_trace(
-        input integer index,
-        input integer pc,
-        input integer writes,
-        input integer rd,
-        input logic [31:0] value
-    );
+    task automatic build_reference_oracle;
+        integer oracle_word;
+        integer oracle_reg;
+        integer oracle_byte;
+        integer oracle_ok;
+        integer oracle_halt_seen;
+        int unsigned oracle_pc;
+        int unsigned oracle_instr;
+        int unsigned oracle_commit;
+        int unsigned oracle_rd;
+        int unsigned oracle_data;
+        int unsigned oracle_addr;
+        int unsigned oracle_is_read;
+        int unsigned oracle_rdata;
+        int unsigned oracle_is_write;
+        int unsigned oracle_wstrb;
+        int unsigned oracle_wdata;
+        int unsigned oracle_mem_byte;
         begin
-            expected_pc[index] = pc;
-            expected_write[index] = writes;
-            expected_rd[index] = rd[4:0];
-            expected_value[index] = value;
+            if (!cmodel_init_empty())
+                $fatal(1, "OOO reference C model initialization failed");
+            for (oracle_word = 0; oracle_word < 256;
+                 oracle_word = oracle_word + 1)
+                cmodel_imem_write32(oracle_word * 4, imem[oracle_word]);
+
+            expected_count = 0;
+            expected_mem_count = 0;
+            oracle_halt_seen = 0;
+            while (!oracle_halt_seen &&
+                   (expected_count < REFERENCE_TRACE_DEPTH)) begin
+                oracle_ok = cmodel_step(
+                    oracle_pc, oracle_instr, oracle_commit, oracle_rd,
+                    oracle_data, oracle_addr, oracle_is_read, oracle_rdata,
+                    oracle_is_write, oracle_wstrb, oracle_wdata);
+                if (!oracle_ok)
+                    $fatal(1, "OOO reference C model step failed");
+
+                if (oracle_instr == JAL_HALT) begin
+                    oracle_halt_seen = 1;
+                end
+                else begin
+                    expected_pc[expected_count] = oracle_pc;
+                    expected_instr[expected_count] = oracle_instr;
+                    expected_write[expected_count] =
+                        oracle_commit[0] && (oracle_rd[4:0] != 5'b0);
+                    expected_rd[expected_count] = oracle_rd[4:0];
+                    expected_value[expected_count] = oracle_data;
+                    expected_count = expected_count + 1;
+
+                    if (oracle_is_read || oracle_is_write) begin
+                        if (expected_mem_count >= REFERENCE_TRACE_DEPTH)
+                            $fatal(1, "OOO reference memory trace overflow");
+                        expected_mem_write[expected_mem_count] =
+                            oracle_is_write[0];
+                        expected_mem_addr[expected_mem_count] = oracle_addr;
+                        expected_mem_wstrb[expected_mem_count] =
+                            oracle_wstrb[3:0];
+                        expected_mem_wdata[expected_mem_count] = oracle_wdata;
+                        expected_mem_rdata[expected_mem_count] = oracle_rdata;
+                        expected_mem_count = expected_mem_count + 1;
+                    end
+                end
+            end
+
+            if (!oracle_halt_seen)
+                $fatal(1,
+                    "OOO reference did not reach terminal self-loop in %0d steps",
+                    REFERENCE_TRACE_DEPTH);
+            if (expected_count != DIRECTED_RETIRE_COUNT)
+                $fatal(1,
+                    "OOO reference retired %0d instructions, expected %0d",
+                    expected_count, DIRECTED_RETIRE_COUNT);
+
+            for (oracle_reg = 0; oracle_reg < 32;
+                 oracle_reg = oracle_reg + 1)
+                expected_arch_regs[oracle_reg] = cmodel_get_reg(oracle_reg);
+            for (oracle_byte = 0; oracle_byte < 256;
+                 oracle_byte = oracle_byte + 1) begin
+                oracle_mem_byte = cmodel_mem_peek8(oracle_byte);
+                expected_data_mem[oracle_byte] = oracle_mem_byte[7:0];
+            end
+            $display(
+                "OOO_REFERENCE_ORACLE PASS retired=%0d memory=%0d",
+                expected_count, expected_mem_count);
         end
     endtask
 
-    initial begin
-        expect_trace(0,   0, 1,  1, 32'd6);
-        expect_trace(1,   4, 1,  2, 32'd7);
-        expect_trace(2,   8, 1,  3, 32'd42);
-        expect_trace(3,  12, 1, 10, 32'd1);
-        expect_trace(4,  16, 1, 11, 32'd2);
-        expect_trace(5,  20, 1, 12, 32'd3);
-        expect_trace(6,  24, 1, 13, 32'd4);
-        expect_trace(7,  28, 1, 13, 32'd5);
-        expect_trace(8,  32, 1,  4, 32'd48);
-        expect_trace(9,  36, 1,  1, 32'd9);
-        expect_trace(10, 40, 1,  5, 32'd16);
-        expect_trace(11, 44, 1,  6, 32'd17);
-        expect_trace(12, 48, 1,  7, 32'd8);
-        expect_trace(13, 52, 1,  2, 32'd100);
-        expect_trace(14, 56, 0,  0, 32'd0);
-        expect_trace(15, 60, 1,  8, 32'd42);
-        expect_trace(16, 64, 1,  9, 32'd4);
-        expect_trace(17, 68, 1, 15, 32'd6);
-        expect_trace(18, 72, 0,  0, 32'd0);
-        expect_trace(19, 76, 0,  0, 32'd0);
-        expect_trace(20, 88, 1, 20, 32'd7);
-        expect_trace(21, 92, 1, 22, 32'd96);
-        expect_trace(22,100, 1, 23, 32'd8);
-        expect_trace(23,104, 1, 25, 32'hffff_fffe);
-        expect_trace(24,108, 1, 24, 32'hffff_ffff);
-        expect_trace(25,112, 1, 26, 32'hffff_ffff);
-        expect_trace(26,116, 1, 27, 32'd0);
-        expect_trace(27,120, 1, 28, 32'd11);
-        expect_trace(28,124, 1, 29, 32'd1);
-        expect_trace(29,128, 1, 30, 32'd128);
-        expect_trace(30,132, 1, 30, 32'd144);
-        expect_trace(31,136, 1, 31, 32'd140);
-        expect_trace(32,144, 1, 19, 32'd9);
-        expect_trace(33,148, 0,  0, 32'd0);
-        expect_trace(34,152, 1, 14, 32'd55);
-        expect_trace(35,156, 0,  0, 32'd0);
-        expect_trace(36,160, 1, 16, 32'd77);
-        expect_trace(37,164, 1, 17, 32'd256);
-        expect_trace(38,168, 0,  0, 32'd0);
-        expect_trace(39,180, 1, 18, 32'd88);
+    task automatic check_reference_memory_request;
+        integer index;
+        begin
+            index = expected_mem_index;
+            if (index >= expected_mem_count)
+                $fatal(1,
+                    "unexpected OOO memory request write=%0b addr=%08x",
+                    dmem_req_write, dmem_req_addr);
+            if (dmem_req_write !== expected_mem_write[index])
+                $fatal(1,
+                    "OOO memory[%0d] kind got=%0b expected=%0b",
+                    index, dmem_req_write, expected_mem_write[index]);
+            if (dmem_req_addr !== expected_mem_addr[index])
+                $fatal(1,
+                    "OOO memory[%0d] address got=%08x expected=%08x",
+                    index, dmem_req_addr, expected_mem_addr[index]);
+            if (dmem_req_write) begin
+                if (dmem_req_wstrb !== expected_mem_wstrb[index])
+                    $fatal(1,
+                        "OOO memory[%0d] strobe got=%x expected=%x",
+                        index, dmem_req_wstrb,
+                        expected_mem_wstrb[index]);
+                if (dmem_req_wdata !== expected_mem_wdata[index])
+                    $fatal(1,
+                        "OOO memory[%0d] data got=%08x expected=%08x",
+                        index, dmem_req_wdata,
+                        expected_mem_wdata[index]);
+            end
+            else if (read_data_word(dmem_req_addr) !==
+                     expected_mem_rdata[index]) begin
+                $fatal(1,
+                    "OOO memory[%0d] read data got=%08x expected=%08x",
+                    index, read_data_word(dmem_req_addr),
+                    expected_mem_rdata[index]);
+            end
+            expected_mem_index = expected_mem_index + 1;
+        end
+    endtask
+
+    always @(posedge clk) begin
+        if (reset)
+            expected_mem_index = 0;
+        else if (dmem_req_valid && dmem_req_ready)
+            check_reference_memory_request();
     end
 
     integer trace_index;
@@ -388,12 +493,16 @@ module ooo_core_tb;
         else if (!test_done) begin
             for (lane = 0; lane < 2; lane = lane + 1) begin
                 if (retire_valid[lane]) begin
-                    if (trace_index >= EXPECTED_RETIRE)
+                    if (trace_index >= expected_count)
                         $fatal(1, "retired more instructions than expected");
                     if (retire_pc[lane] !== expected_pc[trace_index])
                         $fatal(1, "retire[%0d] PC mismatch: got %08x expected %08x instr=%08x",
                                trace_index, retire_pc[lane], expected_pc[trace_index],
                                retire_instr[lane]);
+                    if (retire_instr[lane] !== expected_instr[trace_index])
+                        $fatal(1, "retire[%0d] instruction mismatch: got %08x expected %08x",
+                               trace_index, retire_instr[lane],
+                               expected_instr[trace_index]);
                     if (retire_rd_write[lane] !== expected_write[trace_index])
                         $fatal(1, "retire[%0d] write flag mismatch", trace_index);
                     if (retire_rd_write[lane]) begin
@@ -410,8 +519,19 @@ module ooo_core_tb;
                     end
 
                     trace_index = trace_index + 1;
-                    if (trace_index == EXPECTED_RETIRE)
+                    if (trace_index == expected_count)
                         test_done = 1'b1;
+                end
+            end
+        end
+        else begin
+            for (lane = 0; lane < 2; lane = lane + 1) begin
+                if (retire_valid[lane] &&
+                    ((retire_pc[lane] !== HALT_PC) ||
+                     (retire_instr[lane] !== JAL_HALT))) begin
+                    $fatal(1,
+                        "non-halt retirement after reference trace pc=%08x instr=%08x",
+                        retire_pc[lane], retire_instr[lane]);
                 end
             end
         end
@@ -423,10 +543,12 @@ module ooo_core_tb;
     end
 
     integer timeout_cycles;
+    integer final_i;
     initial begin
         reset = 1'b1;
         repeat (5) @(posedge clk);
         @(negedge clk);
+        build_reference_oracle();
         reset = 1'b0;
 
         timeout_cycles = 0;
@@ -440,36 +562,29 @@ module ooo_core_tb;
             $fatal(1, "OOO core timeout: retired=%0d ROB=%0d", trace_index,
                    rob_occupancy);
 
-        if (arch_regs[0] !== 32'b0) $fatal(1, "x0 changed");
-        if (arch_regs[1] !== 32'd9) $fatal(1, "x1 mismatch");
-        if (arch_regs[2] !== 32'd100) $fatal(1, "x2 mismatch");
-        if (arch_regs[3] !== 32'd42) $fatal(1, "x3 mismatch");
-        if (arch_regs[4] !== 32'd48) $fatal(1, "WAR rename failure x4");
-        if (arch_regs[5] !== 32'd16) $fatal(1, "x5 mismatch");
-        if (arch_regs[6] !== 32'd17) $fatal(1, "pair RAW failure x6");
-        if (arch_regs[7] !== 32'd8) $fatal(1, "WAR rename failure x7");
-        if (arch_regs[8] !== 32'd42) $fatal(1, "load mismatch x8");
-        if (arch_regs[9] !== 32'd4) $fatal(1, "DIV mismatch x9");
-        if (arch_regs[13] !== 32'd5) $fatal(1, "same-packet WAW failure");
-        if (arch_regs[14] !== 32'd55) $fatal(1, "x0 MUL polluted live PRF state");
-        if (arch_regs[15] !== 32'd6) $fatal(1, "REM mismatch x15");
-        if (arch_regs[16] !== 32'd77) $fatal(1, "x0 load polluted live PRF state");
-        if (arch_regs[17] !== 32'd256) $fatal(1, "wrong-path load base mismatch");
-        if (arch_regs[18] !== 32'd88) $fatal(1, "wrong-path load recovery failed");
-        if (arch_regs[19] !== 32'd9) $fatal(1, "JALR recovery failed");
-        if (arch_regs[20] !== 32'd7) $fatal(1, "branch recovery failed");
-        if (arch_regs[21] !== 32'd0) $fatal(1, "wrong branch path committed");
-        if (arch_regs[22] !== 32'd96) $fatal(1, "JAL link mismatch");
-        if (arch_regs[23] !== 32'd8) $fatal(1, "JAL recovery failed");
-        if (arch_regs[24] !== 32'hffff_ffff) $fatal(1, "MULH mismatch");
-        if (arch_regs[26] !== 32'hffff_ffff) $fatal(1, "MULHSU mismatch");
-        if (arch_regs[27] !== 32'b0) $fatal(1, "MULHU mismatch");
-        if (arch_regs[28] !== 32'd11) $fatal(1, "DIVU mismatch");
-        if (arch_regs[29] !== 32'd1) $fatal(1, "REMU mismatch");
-        if (arch_regs[30] !== 32'd144) $fatal(1, "JALR base mismatch");
-        if (arch_regs[31] !== 32'd140) $fatal(1, "JALR link mismatch");
-        if ({data_mem[3], data_mem[2], data_mem[1], data_mem[0]} !== 32'd42)
-            $fatal(1, "store result mismatch");
+        // Observe one more retirement edge so a duplicated or otherwise
+        // non-terminal record cannot hide behind the expected-count stop.
+        @(negedge clk);
+        #1;
+
+        for (final_i = 0; final_i < 32; final_i = final_i + 1) begin
+            if (arch_regs[final_i] !== expected_arch_regs[final_i])
+                $fatal(1,
+                    "OOO final x%0d got=%08x expected=%08x",
+                    final_i, arch_regs[final_i],
+                    expected_arch_regs[final_i]);
+        end
+        for (final_i = 0; final_i < 256; final_i = final_i + 1) begin
+            if (data_mem[final_i] !== expected_data_mem[final_i])
+                $fatal(1,
+                    "OOO final memory[%0d] got=%02x expected=%02x",
+                    final_i, data_mem[final_i],
+                    expected_data_mem[final_i]);
+        end
+        if (expected_mem_index != expected_mem_count)
+            $fatal(1,
+                "OOO memory trace incomplete got=%0d expected=%0d",
+                expected_mem_index, expected_mem_count);
         if (ooo_completion_count == 0)
             $fatal(1, "no younger instruction completed ahead of a blocked head");
         if (rob_full_cycles == 0)
@@ -479,13 +594,18 @@ module ooo_core_tb;
         if (branch_recoveries != 4)
             $fatal(1, "expected four control-flow recoveries, got %0d",
                    branch_recoveries);
-        if (dmem_request_count != 3)
-            $fatal(1, "wrong data request count: got %0d expected 3",
-                   dmem_request_count);
+        if (dmem_request_count != expected_mem_count)
+            $fatal(1,
+                "wrong data request count: got %0d reference %0d",
+                dmem_request_count, expected_mem_count);
         if (wrong_path_read_seen)
             $fatal(1, "taken-branch wrong-path load reached data memory");
         if (memory_fault)
             $fatal(1, "unexpected memory fault");
+
+        $display(
+            "OOO_REFERENCE_STATE PASS regs=32 memory_bytes=256 memory_requests=%0d",
+            expected_mem_count);
 
         $display("OOO_CORE_TEST PASS cycles=%0d retired=%0d ooo=%0d rob_full=%0d load_block=%0d recoveries=%0d",
                  cycle_count, retired_count, ooo_completion_count,
