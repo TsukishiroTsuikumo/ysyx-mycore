@@ -483,12 +483,14 @@ module ooo_core_tb;
     integer trace_index;
     integer lane;
     logic test_done;
+    logic [63:0] reference_branch_recoveries;
     // Sample registered retirement pulses half a cycle after the DUT edge so
     // the final check completes before a following instruction can retire.
     always @(negedge clk or posedge reset) begin
         if (reset) begin
             trace_index = 0;
             test_done = 1'b0;
+            reference_branch_recoveries = 64'b0;
         end
         else if (!test_done) begin
             for (lane = 0; lane < 2; lane = lane + 1) begin
@@ -519,8 +521,13 @@ module ooo_core_tb;
                     end
 
                     trace_index = trace_index + 1;
-                    if (trace_index == expected_count)
+                    if (trace_index == expected_count) begin
+                        // Snapshot the recoveries belonging to the reference
+                        // trace.  The allowed terminal JAL sentinel may itself
+                        // recover on the additional post-trace guard cycle.
+                        reference_branch_recoveries = branch_recoveries;
                         test_done = 1'b1;
+                    end
                 end
             end
         end
@@ -591,9 +598,9 @@ module ooo_core_tb;
             $fatal(1, "ROB-full condition was not exercised");
         if (load_block_cycles == 0)
             $fatal(1, "conservative store/load blocking was not exercised");
-        if (branch_recoveries != 4)
+        if (reference_branch_recoveries != 4)
             $fatal(1, "expected four control-flow recoveries, got %0d",
-                   branch_recoveries);
+                   reference_branch_recoveries);
         if (dmem_request_count != expected_mem_count)
             $fatal(1,
                 "wrong data request count: got %0d reference %0d",
@@ -609,7 +616,8 @@ module ooo_core_tb;
 
         $display("OOO_CORE_TEST PASS cycles=%0d retired=%0d ooo=%0d rob_full=%0d load_block=%0d recoveries=%0d",
                  cycle_count, retired_count, ooo_completion_count,
-                 rob_full_cycles, load_block_cycles, branch_recoveries);
+                 rob_full_cycles, load_block_cycles,
+                 reference_branch_recoveries);
         $finish;
     end
 
