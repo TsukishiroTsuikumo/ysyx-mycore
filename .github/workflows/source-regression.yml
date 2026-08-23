@@ -51,16 +51,20 @@ jobs:
 
       - name: Build and run every source-program differential test
         run: |
-          set -o pipefail
-          make regression 2>&1 | tee source-regression.log
-          grep -Fq 'Passed: 5  Failed: 0' source-regression.log
+          set -euo pipefail
+          mkdir -p ci-artifacts
+          # scripts/regression.py begins with `make clean`, whose root-level
+          # *.log rule would unlink a tee target placed beside the Makefile.
+          make regression 2>&1 | tee ci-artifacts/source-regression.log
+          grep -Fq 'Passed: 5  Failed: 0' \
+            ci-artifacts/source-regression.log
 
       - name: Upload source-regression evidence
         uses: actions/upload-artifact@v4
         with:
           name: source-program-regression
           path: |
-            source-regression.log
+            ci-artifacts/source-regression.log
             log/*.log
             csrc/image/*_image.mem
           if-no-files-found: error
