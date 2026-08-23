@@ -1,7 +1,7 @@
 class isa_coverage extends uvm_subscriber #(probe_item);
     `uvm_component_utils(isa_coverage)
 
-    localparam int unsigned INSTRUCTION_BIN_COUNT = 45;
+    localparam int unsigned INSTRUCTION_BIN_COUNT = 46;
     localparam int unsigned BRANCH_BIN_COUNT = 12;
     localparam int unsigned REQUIRED_BIN_COUNT =
         INSTRUCTION_BIN_COUNT + BRANCH_BIN_COUNT;
@@ -115,6 +115,7 @@ class isa_coverage extends uvm_subscriber #(probe_item);
                 end
                 return -1;
             end
+            7'b0001111: return (funct3 == 3'b000) ? 45 : -1; // FENCE
             default: return -1;
         endcase
     endfunction
@@ -179,18 +180,19 @@ class isa_coverage extends uvm_subscriber #(probe_item);
             42: return "DIVU";
             43: return "REM";
             44: return "REMU";
-            45: return "BEQ_NOT_TAKEN";
-            46: return "BEQ_TAKEN";
-            47: return "BNE_NOT_TAKEN";
-            48: return "BNE_TAKEN";
-            49: return "BLT_NOT_TAKEN";
-            50: return "BLT_TAKEN";
-            51: return "BGE_NOT_TAKEN";
-            52: return "BGE_TAKEN";
-            53: return "BLTU_NOT_TAKEN";
-            54: return "BLTU_TAKEN";
-            55: return "BGEU_NOT_TAKEN";
-            56: return "BGEU_TAKEN";
+            45: return "FENCE";
+            46: return "BEQ_NOT_TAKEN";
+            47: return "BEQ_TAKEN";
+            48: return "BNE_NOT_TAKEN";
+            49: return "BNE_TAKEN";
+            50: return "BLT_NOT_TAKEN";
+            51: return "BLT_TAKEN";
+            52: return "BGE_NOT_TAKEN";
+            53: return "BGE_TAKEN";
+            54: return "BLTU_NOT_TAKEN";
+            55: return "BLTU_TAKEN";
+            56: return "BGEU_NOT_TAKEN";
+            57: return "BGEU_TAKEN";
             default: return "UNKNOWN";
         endcase
     endfunction

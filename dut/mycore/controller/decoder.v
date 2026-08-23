@@ -153,7 +153,7 @@ module decoder
             end
 
         // ----- I-Type ----- //
-        //fence, fence.tso, pause, ecall, ebreak are not implemented
+        // FENCE.I, ecall and ebreak are not implemented.
             7'b0010011: begin
                 sel_imm = 1'b1;
                 sel_rd  = 1'b1;
@@ -219,6 +219,17 @@ module decoder
                 use_adder = 1'b1;
                 adder_op = 3'b000; // add
                 imm = {{20{instr[31]}}, instr[31:20]};
+            end
+
+            7'b0001111: begin // MISC-MEM
+                // The stable core is strictly ordered and permits only one
+                // outstanding data transaction.  A legal FENCE therefore
+                // needs no execution-unit side effect: the valid instruction
+                // flows through the ordered pipeline and retires after every
+                // older access.  FENCE.I (funct3=001) stays unsupported.
+                if (func3 == 3'b000) begin
+                    sel_rd = 1'b0;
+                end
             end
 
         // ----- S-Type ----- //

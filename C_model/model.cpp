@@ -103,6 +103,17 @@ cmodel_retire_trace mycore::step() {
     trace.instr = instr;
 
     switch (opcode) {
+    case 0x0f:
+        // FENCE (funct3=000) is an ordered, architecturally side-effect-free
+        // instruction in this execution model.  The model executes memory
+        // operations synchronously, so reaching this point already guarantees
+        // that every older access is complete before the next instruction is
+        // stepped.  FENCE.I (funct3=001) remains outside the model contract.
+        if (funct3 != 0x0) {
+            // Unsupported MISC-MEM encodings retain the project's existing
+            // inert-instruction behavior until an exception path exists.
+        }
+        break;
     case 0x33: {
         const uint32_t shamt = v2 & 0x1f;
         write_rd = true;

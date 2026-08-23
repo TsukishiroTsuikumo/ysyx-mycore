@@ -65,6 +65,7 @@ module ooo_core #(
     localparam logic [2:0] CLASS_LOAD    = 3'd2;
     localparam logic [2:0] CLASS_STORE   = 3'd3;
     localparam logic [2:0] CLASS_CONTROL = 3'd4;
+    localparam logic [2:0] CLASS_FENCE   = 3'd5;
 
     localparam integer ROB_W = $clog2(ROB_DEPTH);
     localparam integer RS_W  = $clog2(RS_DEPTH);
@@ -362,6 +363,7 @@ module ooo_core #(
     logic [PRF_W-1:0] rob_old_pdst [0:ROB_DEPTH-1];
     logic [31:0] rob_value [0:ROB_DEPTH-1];
     logic rob_is_control [0:ROB_DEPTH-1];
+    logic rob_is_fence [0:ROB_DEPTH-1];
     logic [31:0] rob_control_target [0:ROB_DEPTH-1];
     logic rob_mispredict [0:ROB_DEPTH-1];
     logic rob_is_store [0:ROB_DEPTH-1];
@@ -399,6 +401,8 @@ module ooo_core #(
     logic [31:0] next_seq_q;
     logic unresolved_branch_q;
     logic [31:0] unresolved_branch_seq_q;
+    logic unresolved_fence_q;
+    logic [31:0] unresolved_fence_seq_q;
 
     genvar arch_probe;
     generate
@@ -516,7 +520,9 @@ module ooo_core #(
             (free_rs_count >= slot0_rs_need) &&
             (free_lsq_count >= slot0_lsq_need) &&
             !((slot_class[0] == CLASS_CONTROL) && slot_supported[0] &&
-              unresolved_branch_q);
+              unresolved_branch_q) &&
+            !((slot_class[0] == CLASS_FENCE) && slot_supported[0] &&
+              unresolved_fence_q);
 
         slot1_can_dispatch = slot0_can_dispatch && slot_valid[1] &&
             (rob_count_q <= ROB_DEPTH-2) &&
@@ -525,7 +531,12 @@ module ooo_core #(
             (free_lsq_count >= (slot0_lsq_need + slot1_lsq_need)) &&
             !((slot_class[1] == CLASS_CONTROL) && slot_supported[1] &&
               (unresolved_branch_q ||
-               ((slot_class[0] == CLASS_CONTROL) && slot_supported[0])));
+               ((slot_class[0] == CLASS_CONTROL) && slot_supported[0]))) &&
+            !((slot_class[1] == CLASS_FENCE) && slot_supported[1] &&
+              (unresolved_fence_q ||
+               ((slot_class[0] == CLASS_FENCE) && slot_supported[0]))) &&
+            !((slot_class[0] == CLASS_FENCE) && slot_supported[0]) &&
+            !((slot_class[1] == CLASS_FENCE) && slot_supported[1]);
 
         dispatch_count = 2'd0;
         if (slot0_can_dispatch)
@@ -584,6 +595,7 @@ module ooo_core #(
     integer alu_sel0_i, alu_sel1_i, mul_sel_i, lsu_sel_i;
     integer exec_i;
     logic [31:0] best_seq0, best_seq1, best_mul_seq, best_lsu_seq;
+    logic alu0_selected_fence;
 
     always_comb begin
         alu_sel0_i = -1;
@@ -594,19 +606,26 @@ module ooo_core #(
         best_seq1 = 32'hffff_ffff;
         best_mul_seq = 32'hffff_ffff;
         best_lsu_seq = 32'hffff_ffff;
+        alu0_selected_fence = 1'b0;
 
         if (!recovery_now) begin
             for (exec_i = 0; exec_i < RS_DEPTH; exec_i = exec_i + 1) begin
                 if (rs_valid[exec_i] && rs_src1_ready[exec_i] &&
                     rs_src2_ready[exec_i] &&
+                    (!unresolved_fence_q ||
+                     (rs_seq[exec_i] <= unresolved_fence_seq_q)) &&
                     ((rs_class[exec_i] == CLASS_ALU) ||
-                     (rs_class[exec_i] == CLASS_CONTROL)) &&
+                     (rs_class[exec_i] == CLASS_CONTROL) ||
+                     ((rs_class[exec_i] == CLASS_FENCE) &&
+                      (rs_rob[exec_i] == rob_head_q))) &&
                     (rs_seq[exec_i] < best_seq0)) begin
                     alu_sel0_i = exec_i;
                     best_seq0 = rs_seq[exec_i];
                 end
                 if (rs_valid[exec_i] && rs_src1_ready[exec_i] &&
                     rs_src2_ready[exec_i] &&
+                    (!unresolved_fence_q ||
+                     (rs_seq[exec_i] <= unresolved_fence_seq_q)) &&
                     (rs_class[exec_i] == CLASS_MULDIV) && !mul_busy_q &&
                     (rs_seq[exec_i] < best_mul_seq)) begin
                     mul_sel_i = exec_i;
@@ -614,6 +633,8 @@ module ooo_core #(
                 end
                 if (rs_valid[exec_i] && rs_src1_ready[exec_i] &&
                     rs_src2_ready[exec_i] &&
+                    (!unresolved_fence_q ||
+                     (rs_seq[exec_i] <= unresolved_fence_seq_q)) &&
                     ((rs_class[exec_i] == CLASS_LOAD) ||
                      (rs_class[exec_i] == CLASS_STORE)) &&
                     (rs_seq[exec_i] < best_lsu_seq)) begin
@@ -622,14 +643,22 @@ module ooo_core #(
                 end
             end
 
-            for (exec_i = 0; exec_i < RS_DEPTH; exec_i = exec_i + 1) begin
-                if (rs_valid[exec_i] && (exec_i != alu_sel0_i) &&
-                    rs_src1_ready[exec_i] && rs_src2_ready[exec_i] &&
-                    ((rs_class[exec_i] == CLASS_ALU) ||
-                     (rs_class[exec_i] == CLASS_CONTROL)) &&
-                    (rs_seq[exec_i] < best_seq1)) begin
-                    alu_sel1_i = exec_i;
-                    best_seq1 = rs_seq[exec_i];
+            if (alu_sel0_i >= 0)
+                alu0_selected_fence =
+                    (rs_class[alu_sel0_i] == CLASS_FENCE);
+
+            if (!alu0_selected_fence) begin
+                for (exec_i = 0; exec_i < RS_DEPTH; exec_i = exec_i + 1) begin
+                    if (rs_valid[exec_i] && (exec_i != alu_sel0_i) &&
+                        rs_src1_ready[exec_i] && rs_src2_ready[exec_i] &&
+                        (!unresolved_fence_q ||
+                         (rs_seq[exec_i] <= unresolved_fence_seq_q)) &&
+                        ((rs_class[exec_i] == CLASS_ALU) ||
+                         (rs_class[exec_i] == CLASS_CONTROL)) &&
+                        (rs_seq[exec_i] < best_seq1)) begin
+                        alu_sel1_i = exec_i;
+                        best_seq1 = rs_seq[exec_i];
+                    end
                 end
             end
         end
@@ -730,15 +759,17 @@ module ooo_core #(
                     mem_candidate_i = mem_i;
             end
 
-            // A load waits behind every older store and behind an older
-            // unresolved control instruction.  This avoids both speculative
-            // store forwarding and externally visible wrong-path reads.
+            // A load waits behind every older store, unresolved control, and
+            // unresolved FENCE.  This avoids speculative store forwarding,
+            // externally visible wrong-path reads, and crossing a barrier.
             if (mem_candidate_i < 0) begin
                 for (mem_i = 0; mem_i < LSQ_DEPTH; mem_i = mem_i + 1) begin
                     if (lsq_valid[mem_i] && !lsq_is_store[mem_i] &&
                         lsq_addr_valid[mem_i] && !lsq_issued[mem_i]) begin
-                        if (unresolved_branch_q &&
-                            (lsq_seq[mem_i] > unresolved_branch_seq_q)) begin
+                        if ((unresolved_branch_q &&
+                             (lsq_seq[mem_i] > unresolved_branch_seq_q)) ||
+                            (unresolved_fence_q &&
+                             (lsq_seq[mem_i] > unresolved_fence_seq_q))) begin
                             any_load_blocked = 1'b1;
                         end
                         else begin
@@ -764,8 +795,10 @@ module ooo_core #(
             for (mem_i = 0; mem_i < LSQ_DEPTH; mem_i = mem_i + 1) begin
                 if (lsq_valid[mem_i] && !lsq_is_store[mem_i] &&
                     lsq_addr_valid[mem_i] && !lsq_issued[mem_i]) begin
-                    if (unresolved_branch_q &&
-                        (lsq_seq[mem_i] > unresolved_branch_seq_q)) begin
+                    if ((unresolved_branch_q &&
+                         (lsq_seq[mem_i] > unresolved_branch_seq_q)) ||
+                        (unresolved_fence_q &&
+                         (lsq_seq[mem_i] > unresolved_fence_seq_q))) begin
                         any_load_blocked = 1'b1;
                     end
                     else begin
@@ -823,9 +856,11 @@ module ooo_core #(
             (!rob_is_store[rob_head_q] || rob_store_done[rob_head_q]);
         second_commit_ready = head_commit_ready &&
             !rob_is_control[rob_head_q] &&
+            !rob_is_fence[rob_head_q] &&
             rob_valid[rob_head_next] && rob_ready[rob_head_next] &&
             (!rob_is_store[rob_head_next] || rob_store_done[rob_head_next]) &&
-            !rob_is_control[rob_head_next];
+            !rob_is_control[rob_head_next] &&
+            !rob_is_fence[rob_head_next];
 
         recovery_now = head_commit_ready && rob_is_control[rob_head_q] &&
                        rob_mispredict[rob_head_q];
@@ -870,6 +905,8 @@ module ooo_core #(
             next_seq_q <= 32'b0;
             unresolved_branch_q <= 1'b0;
             unresolved_branch_seq_q <= 32'b0;
+            unresolved_fence_q <= 1'b0;
+            unresolved_fence_seq_q <= 32'b0;
 
             mul_busy_q <= 1'b0;
             mul_count_q <= {M_COUNT_W{1'b0}};
@@ -928,6 +965,7 @@ module ooo_core #(
                 rob_old_pdst[i] <= {PRF_W{1'b0}};
                 rob_value[i] <= 32'b0;
                 rob_is_control[i] <= 1'b0;
+                rob_is_fence[i] <= 1'b0;
                 rob_control_target[i] <= 32'b0;
                 rob_mispredict[i] <= 1'b0;
                 rob_is_store[i] <= 1'b0;
@@ -1014,6 +1052,8 @@ module ooo_core #(
                 rob_count_q <= {ROB_COUNT_W{1'b0}};
                 unresolved_branch_q <= 1'b0;
                 unresolved_branch_seq_q <= 32'b0;
+                unresolved_fence_q <= 1'b0;
+                unresolved_fence_seq_q <= 32'b0;
                 mul_busy_q <= 1'b0;
                 mul_count_q <= {M_COUNT_W{1'b0}};
                 mem_pending_q <= 1'b0;
@@ -1239,6 +1279,8 @@ module ooo_core #(
                         rob_value[dispatch_rob_idx] <= 32'b0;
                         rob_is_control[dispatch_rob_idx] <= slot_supported[dispatch_lane] &&
                                                            (slot_class[dispatch_lane] == CLASS_CONTROL);
+                        rob_is_fence[dispatch_rob_idx] <= slot_supported[dispatch_lane] &&
+                                                         (slot_class[dispatch_lane] == CLASS_FENCE);
                         rob_control_target[dispatch_rob_idx] <= slot_pc[dispatch_lane] + 4;
                         rob_mispredict[dispatch_rob_idx] <= 1'b0;
                         rob_is_store[dispatch_rob_idx] <= slot_supported[dispatch_lane] &&
@@ -1254,6 +1296,11 @@ module ooo_core #(
                             (slot_class[dispatch_lane] == CLASS_CONTROL)) begin
                             unresolved_branch_q <= 1'b1;
                             unresolved_branch_seq_q <= next_seq_q + dispatch_lane;
+                        end
+                        if (slot_supported[dispatch_lane] &&
+                            (slot_class[dispatch_lane] == CLASS_FENCE)) begin
+                            unresolved_fence_q <= 1'b1;
+                            unresolved_fence_seq_q <= next_seq_q + dispatch_lane;
                         end
 
                         if (slot_supported[dispatch_lane]) begin
@@ -1329,6 +1376,8 @@ module ooo_core #(
                         end
                         if (rob_is_control[commit_rob])
                             unresolved_branch_q <= 1'b0;
+                        if (rob_is_fence[commit_rob])
+                            unresolved_fence_q <= 1'b0;
                     end
                 end
 
@@ -1367,6 +1416,20 @@ module ooo_core #(
                 $fatal(1, "ooo_core ROB occupancy overflow");
             if (dmem_resp_valid_in && !mem_busy_q && !mem_drop_response_q)
                 $fatal(1, "ooo_core received an unsolicited data response");
+            if ((dispatch_count == 2) &&
+                (((slot_class[0] == CLASS_FENCE) && slot_supported[0]) ||
+                 ((slot_class[1] == CLASS_FENCE) && slot_supported[1])))
+                $fatal(1, "ooo_core dispatched FENCE with another instruction");
+            if (alu0_selected_fence &&
+                ((alu0_rob != rob_head_q) || alu1_valid ||
+                 (mul_sel_i >= 0) || (lsu_sel_i >= 0)))
+                $fatal(1, "ooo_core did not serialize FENCE execution");
+            if ((commit_count == 2) &&
+                (rob_is_fence[rob_head_q] || rob_is_fence[rob_head_next]))
+                $fatal(1, "ooo_core committed FENCE with another instruction");
+            if (dmem_request_fire && unresolved_fence_q &&
+                (lsq_seq[mem_lsq_q] > unresolved_fence_seq_q))
+                $fatal(1, "ooo_core memory request crossed unresolved FENCE");
         end
     end
     // synthesis translate_on

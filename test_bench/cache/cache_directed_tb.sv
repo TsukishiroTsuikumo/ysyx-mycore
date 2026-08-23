@@ -117,6 +117,7 @@ module cache_directed_tb;
     Icache u_icache (
         .clk               (clk),
         .reset             (reset),
+        .flush             (1'b0),
         .pm_req_valid_in   (ic_cpu_req_valid),
         .pm_req_addr_in    (ic_cpu_req_addr),
         .pm_req_ready_out  (ic_cpu_req_ready),
@@ -903,8 +904,9 @@ module cache_directed_tb;
             cover_true(COV_IC_CLEAN_REPLACE, scenario_ok,
                        "ICache age-based clean replacement");
 
-            // ICache has no explicit flush port; reset is its invalidation
-            // mechanism. Fill a line, reset, then require a second refill.
+            // This directed gate ties the explicit flush port low and checks
+            // reset invalidation separately. Fill a line, reset, then require
+            // a second refill.
             apply_reset();
             fork
                 ic_cpu_read(32'h0000_3000, 1'b1, data, fault_seen,

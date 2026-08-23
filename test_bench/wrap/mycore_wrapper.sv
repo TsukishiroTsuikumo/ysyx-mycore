@@ -142,6 +142,7 @@ module mycore_wrapper (
     Icache u_icache (
         .clk                (clk),
         .reset              (reset),
+        .flush              (1'b0),
 
         .pm_req_valid_in    (core_pm_req_valid),
         .pm_req_addr_in     (core_pm_req_addr),

@@ -2,9 +2,9 @@
 
 module ooo_core_tb;
     localparam integer REFERENCE_TRACE_DEPTH = 256;
-    localparam integer DIRECTED_RETIRE_COUNT = 40;
+    localparam integer DIRECTED_RETIRE_COUNT = 42;
     localparam logic [31:0] JAL_HALT = 32'h0000_006f;
-    localparam logic [31:0] HALT_PC = 32'd184;
+    localparam logic [31:0] HALT_PC = 32'd192;
 
     `include "cmodel_dpi.svh"
 
@@ -174,9 +174,11 @@ module ooo_core_tb;
         imem[15] = enc_i(0, 0, 3'b010, 8, 7'b0000011);   // lw x8,0(x0)
         imem[16] = enc_r(1, 1, 3, 3'b100, 9);            // div x9,x3,x1 = 4
         imem[17] = enc_r(1, 1, 3, 3'b110, 15);           // rem x15,x3,x1 = 6
-        imem[18] = enc_i(123, 0, 3'b000, 0, 7'b0010011); // x0 remains zero
+        // A correctly predicted not-taken control instruction complements the
+        // redirecting controls below without changing architectural state.
+        imem[18] = enc_b(8, 0, 0, 3'b001);                // bne x0,x0,PC+8
 
-        // Predicted-not-taken BEQ; PCs 80/84 are wrong-path instructions.
+        // Predicted-not-taken but actually taken BEQ; PCs 80/84 are wrong path.
         imem[19] = enc_b(12, 3, 8, 3'b000);              // beq x8,x3,88
         imem[20] = enc_i(99, 0, 3'b000, 20, 7'b0010011);
         imem[21] = enc_i(98, 0, 3'b000, 21, 7'b0010011);
@@ -213,8 +215,17 @@ module ooo_core_tb;
         imem[42] = enc_b(12, 0, 0, 3'b000);              // taken to PC 180
         imem[43] = enc_i(0, 17, 3'b010, 18, 7'b0000011);// wrong-path faulting load
         imem[44] = enc_i(99, 0, 3'b000, 18, 7'b0010011);// wrong path
-        imem[45] = enc_i(88, 0, 3'b000, 18, 7'b0010011);// target PC 180
-        imem[46] = enc_j(0, 0);                          // terminal self-loop
+        // Keep FENCE behind a long-latency architectural predecessor so the
+        // following load is present in the scheduler while the barrier is
+        // unresolved; the final load overwrites this temporary x18 value.
+        imem[45] = enc_r(1, 1, 3, 3'b100, 18);           // div x18,x3,x1 = 4
+
+        // FENCE and the following load arrive in one fetch packet.  FENCE must
+        // dispatch, execute, and retire alone; the younger load may proceed
+        // only after the barrier retires.
+        imem[46] = 32'h0ff0_000f;                        // fence rw,rw
+        imem[47] = enc_i(0, 0, 3'b010, 18, 7'b0000011); // lw x18,0(x0) = 42
+        imem[48] = enc_j(0, 0);                          // terminal self-loop
     end
 
     // Instruction memory: one-cycle response, one outstanding transaction.
@@ -346,6 +357,311 @@ module ooo_core_tb;
     integer expected_count;
     integer expected_mem_count;
     integer expected_mem_index;
+
+    // Explicit semantic coverage is kept separate from implementation line
+    // coverage.  Every bit below is set only by a DUT action observed at the
+    // active edge, and the final gate reports the exact missing event names.
+    localparam integer OOO_COV_DISPATCH_ONE                 = 0;
+    localparam integer OOO_COV_DISPATCH_TWO                 = 1;
+    localparam integer OOO_COV_COMMIT_ONE                   = 2;
+    localparam integer OOO_COV_COMMIT_TWO                   = 3;
+    localparam integer OOO_COV_ALU0                         = 4;
+    localparam integer OOO_COV_ALU1                         = 5;
+    localparam integer OOO_COV_DUAL_ALU                     = 6;
+    localparam integer OOO_COV_M_ISSUE                      = 7;
+    localparam integer OOO_COV_M_COMPLETE                   = 8;
+    localparam integer OOO_COV_LOAD_REQUEST                 = 9;
+    localparam integer OOO_COV_LOAD_RESPONSE                = 10;
+    localparam integer OOO_COV_HEAD_STORE_REQUEST           = 11;
+    localparam integer OOO_COV_HEAD_STORE_RESPONSE          = 12;
+    localparam integer OOO_COV_SAME_PACKET_RAW              = 13;
+    localparam integer OOO_COV_SAME_PACKET_WAW              = 14;
+    localparam integer OOO_COV_SAME_PACKET_WAR              = 15;
+    localparam integer OOO_COV_YOUNGER_COMPLETION_BLOCKED   = 16;
+    localparam integer OOO_COV_ROB_FULL                     = 17;
+    localparam integer OOO_COV_LOAD_BLOCKED_OLDER_STORE     = 18;
+    localparam integer OOO_COV_LOAD_BLOCKED_CONTROL         = 19;
+    localparam integer OOO_COV_BEQ_RECOVERY                 = 20;
+    localparam integer OOO_COV_JAL_RECOVERY                 = 21;
+    localparam integer OOO_COV_JALR_RECOVERY                = 22;
+    localparam integer OOO_COV_CORRECT_NOT_TAKEN            = 23;
+    localparam integer OOO_COV_FLUSHED_YOUNGER_INSTR        = 24;
+    localparam integer OOO_COV_FLUSHED_YOUNGER_MEMORY       = 25;
+    localparam integer OOO_COV_X0_M_COMPLETE_NO_PRF_WRITE   = 26;
+    localparam integer OOO_COV_X0_LOAD_COMPLETE_NO_PRF_WRITE = 27;
+    localparam integer OOO_COV_ROB_DRAIN_TO_EMPTY           = 28;
+    localparam integer OOO_COVERAGE_BIN_COUNT               = 29;
+
+    logic [OOO_COVERAGE_BIN_COUNT-1:0] ooo_coverage_hit;
+    logic fence_load_block_seen;
+    logic rob_was_nonempty;
+    integer ooo_cov_i;
+    integer ooo_cov_j;
+
+    function automatic string ooo_coverage_bin_name(input integer bin_index);
+        begin
+            case (bin_index)
+                OOO_COV_DISPATCH_ONE:
+                    ooo_coverage_bin_name = "dispatch_one";
+                OOO_COV_DISPATCH_TWO:
+                    ooo_coverage_bin_name = "dispatch_two";
+                OOO_COV_COMMIT_ONE:
+                    ooo_coverage_bin_name = "commit_one";
+                OOO_COV_COMMIT_TWO:
+                    ooo_coverage_bin_name = "commit_two";
+                OOO_COV_ALU0:
+                    ooo_coverage_bin_name = "alu0_issue";
+                OOO_COV_ALU1:
+                    ooo_coverage_bin_name = "alu1_issue";
+                OOO_COV_DUAL_ALU:
+                    ooo_coverage_bin_name = "dual_alu_issue";
+                OOO_COV_M_ISSUE:
+                    ooo_coverage_bin_name = "m_issue";
+                OOO_COV_M_COMPLETE:
+                    ooo_coverage_bin_name = "m_complete";
+                OOO_COV_LOAD_REQUEST:
+                    ooo_coverage_bin_name = "load_request";
+                OOO_COV_LOAD_RESPONSE:
+                    ooo_coverage_bin_name = "load_response";
+                OOO_COV_HEAD_STORE_REQUEST:
+                    ooo_coverage_bin_name = "rob_head_store_request";
+                OOO_COV_HEAD_STORE_RESPONSE:
+                    ooo_coverage_bin_name = "rob_head_store_response";
+                OOO_COV_SAME_PACKET_RAW:
+                    ooo_coverage_bin_name = "same_packet_raw";
+                OOO_COV_SAME_PACKET_WAW:
+                    ooo_coverage_bin_name = "same_packet_waw";
+                OOO_COV_SAME_PACKET_WAR:
+                    ooo_coverage_bin_name = "same_packet_war";
+                OOO_COV_YOUNGER_COMPLETION_BLOCKED:
+                    ooo_coverage_bin_name = "younger_completion_blocked_head";
+                OOO_COV_ROB_FULL:
+                    ooo_coverage_bin_name = "rob_full";
+                OOO_COV_LOAD_BLOCKED_OLDER_STORE:
+                    ooo_coverage_bin_name = "load_blocked_older_store";
+                OOO_COV_LOAD_BLOCKED_CONTROL:
+                    ooo_coverage_bin_name = "load_blocked_unresolved_control";
+                OOO_COV_BEQ_RECOVERY:
+                    ooo_coverage_bin_name = "beq_recovery";
+                OOO_COV_JAL_RECOVERY:
+                    ooo_coverage_bin_name = "jal_recovery";
+                OOO_COV_JALR_RECOVERY:
+                    ooo_coverage_bin_name = "jalr_recovery";
+                OOO_COV_CORRECT_NOT_TAKEN:
+                    ooo_coverage_bin_name = "correct_not_taken_branch";
+                OOO_COV_FLUSHED_YOUNGER_INSTR:
+                    ooo_coverage_bin_name = "flushed_younger_instruction";
+                OOO_COV_FLUSHED_YOUNGER_MEMORY:
+                    ooo_coverage_bin_name = "flushed_younger_memory_op";
+                OOO_COV_X0_M_COMPLETE_NO_PRF_WRITE:
+                    ooo_coverage_bin_name = "x0_m_complete_no_prf_write";
+                OOO_COV_X0_LOAD_COMPLETE_NO_PRF_WRITE:
+                    ooo_coverage_bin_name = "x0_load_complete_no_prf_write";
+                OOO_COV_ROB_DRAIN_TO_EMPTY:
+                    ooo_coverage_bin_name = "rob_drain_to_empty";
+                default:
+                    ooo_coverage_bin_name = "unknown";
+            endcase
+        end
+    endfunction
+
+    always @(posedge clk) begin
+        if (reset) begin
+            rob_was_nonempty <= 1'b0;
+        end
+        else begin
+            // A zero count at reset is not coverage.  Require a sampled
+            // non-empty ROB followed by a later sampled zero count, proving
+            // that dispatched work genuinely drained or was recovered.
+            if (rob_was_nonempty && (dut.rob_count_q == 0))
+                ooo_coverage_hit[OOO_COV_ROB_DRAIN_TO_EMPTY] <= 1'b1;
+            rob_was_nonempty <= (dut.rob_count_q != 0);
+
+            if (dut.dispatch_count == 2'd1)
+                ooo_coverage_hit[OOO_COV_DISPATCH_ONE] <= 1'b1;
+            if (dut.dispatch_count == 2'd2)
+                ooo_coverage_hit[OOO_COV_DISPATCH_TWO] <= 1'b1;
+            if (dut.commit_count == 2'd1)
+                ooo_coverage_hit[OOO_COV_COMMIT_ONE] <= 1'b1;
+            if (dut.commit_count == 2'd2)
+                ooo_coverage_hit[OOO_COV_COMMIT_TWO] <= 1'b1;
+
+            if (dut.alu0_valid)
+                ooo_coverage_hit[OOO_COV_ALU0] <= 1'b1;
+            if (dut.alu1_valid)
+                ooo_coverage_hit[OOO_COV_ALU1] <= 1'b1;
+            if (dut.alu0_valid && dut.alu1_valid)
+                ooo_coverage_hit[OOO_COV_DUAL_ALU] <= 1'b1;
+            if (dut.mul_sel_i >= 0)
+                ooo_coverage_hit[OOO_COV_M_ISSUE] <= 1'b1;
+            if (dut.mul_wb_valid)
+                ooo_coverage_hit[OOO_COV_M_COMPLETE] <= 1'b1;
+
+            if (dut.dmem_request_fire && !dut.mem_req_write_q)
+                ooo_coverage_hit[OOO_COV_LOAD_REQUEST] <= 1'b1;
+            if (dut.memory_load_wb_valid)
+                ooo_coverage_hit[OOO_COV_LOAD_RESPONSE] <= 1'b1;
+            if (dut.dmem_request_fire && dut.mem_req_write_q &&
+                (dut.mem_rob_q == dut.rob_head_q) &&
+                dut.rob_is_store[dut.rob_head_q])
+                ooo_coverage_hit[OOO_COV_HEAD_STORE_REQUEST] <= 1'b1;
+            if (dut.mem_busy_q && dmem_resp_valid &&
+                dut.mem_req_write_q &&
+                (dut.mem_rob_q == dut.rob_head_q) &&
+                dut.rob_is_store[dut.rob_head_q])
+                ooo_coverage_hit[OOO_COV_HEAD_STORE_RESPONSE] <= 1'b1;
+
+            // Hazard bins require two instructions to have actually dispatched
+            // together, rather than merely appearing together at decode.
+            if (dut.dispatch_count == 2'd2) begin
+                if (dut.slot_writes_rd[0] &&
+                    (dut.slot_rd[0] != 5'd0) &&
+                    ((dut.slot_rs1_used[1] &&
+                      (dut.slot_rs1[1] == dut.slot_rd[0])) ||
+                     (dut.slot_rs2_used[1] &&
+                      (dut.slot_rs2[1] == dut.slot_rd[0]))))
+                    ooo_coverage_hit[OOO_COV_SAME_PACKET_RAW] <= 1'b1;
+                if (dut.slot_writes_rd[0] && dut.slot_writes_rd[1] &&
+                    (dut.slot_rd[0] != 5'd0) &&
+                    (dut.slot_rd[0] == dut.slot_rd[1]))
+                    ooo_coverage_hit[OOO_COV_SAME_PACKET_WAW] <= 1'b1;
+                if (dut.slot_writes_rd[1] &&
+                    (dut.slot_rd[1] != 5'd0) &&
+                    ((dut.slot_rs1_used[0] &&
+                      (dut.slot_rs1[0] == dut.slot_rd[1])) ||
+                     (dut.slot_rs2_used[0] &&
+                      (dut.slot_rs2[0] == dut.slot_rd[1]))))
+                    ooo_coverage_hit[OOO_COV_SAME_PACKET_WAR] <= 1'b1;
+            end
+
+            if (dut.ooo_completion_events != 3'd0)
+                ooo_coverage_hit[OOO_COV_YOUNGER_COMPLETION_BLOCKED] <= 1'b1;
+            if (dut.rob_count_q == 8)
+                ooo_coverage_hit[OOO_COV_ROB_FULL] <= 1'b1;
+
+            // Reconstruct the scheduler predicates per LSQ entry.  The DUT's
+            // older_store_found scratch variable is intentionally not sampled:
+            // it is overwritten while its combinational loop scans entries.
+            for (ooo_cov_i = 0; ooo_cov_i < 12;
+                 ooo_cov_i = ooo_cov_i + 1) begin
+                if (dut.unresolved_fence_q &&
+                    dut.rs_valid[ooo_cov_i] &&
+                    (dut.rs_seq[ooo_cov_i] >
+                     dut.unresolved_fence_seq_q) &&
+                    (dut.rs_instr[ooo_cov_i][6:0] == 7'b0000011))
+                    fence_load_block_seen <= 1'b1;
+            end
+            for (ooo_cov_i = 0; ooo_cov_i < 8;
+                 ooo_cov_i = ooo_cov_i + 1) begin
+                if (dut.lsq_valid[ooo_cov_i] &&
+                    !dut.lsq_is_store[ooo_cov_i] &&
+                    dut.lsq_addr_valid[ooo_cov_i] &&
+                    !dut.lsq_issued[ooo_cov_i]) begin
+                    if (dut.unresolved_branch_q &&
+                        (dut.lsq_seq[ooo_cov_i] >
+                         dut.unresolved_branch_seq_q))
+                        ooo_coverage_hit[OOO_COV_LOAD_BLOCKED_CONTROL] <= 1'b1;
+                    for (ooo_cov_j = 0; ooo_cov_j < 8;
+                         ooo_cov_j = ooo_cov_j + 1) begin
+                        if (dut.lsq_valid[ooo_cov_j] &&
+                            dut.lsq_is_store[ooo_cov_j] &&
+                            (dut.lsq_seq[ooo_cov_j] <
+                             dut.lsq_seq[ooo_cov_i]))
+                            ooo_coverage_hit[
+                                OOO_COV_LOAD_BLOCKED_OLDER_STORE] <= 1'b1;
+                    end
+                end
+            end
+
+            if (dut.head_commit_ready &&
+                dut.rob_is_control[dut.rob_head_q] &&
+                !dut.rob_mispredict[dut.rob_head_q] &&
+                (dut.rob_instr[dut.rob_head_q][6:0] == 7'b1100011))
+                ooo_coverage_hit[OOO_COV_CORRECT_NOT_TAKEN] <= 1'b1;
+
+            if (dut.recovery_now) begin
+                if ((dut.rob_instr[dut.rob_head_q][6:0] == 7'b1100011) &&
+                    (dut.rob_instr[dut.rob_head_q][14:12] == 3'b000))
+                    ooo_coverage_hit[OOO_COV_BEQ_RECOVERY] <= 1'b1;
+                if ((dut.rob_instr[dut.rob_head_q][6:0] == 7'b1101111) &&
+                    (dut.rob_instr[dut.rob_head_q][11:7] != 5'd0))
+                    ooo_coverage_hit[OOO_COV_JAL_RECOVERY] <= 1'b1;
+                if (dut.rob_instr[dut.rob_head_q][6:0] == 7'b1100111)
+                    ooo_coverage_hit[OOO_COV_JALR_RECOVERY] <= 1'b1;
+
+                for (ooo_cov_i = 0; ooo_cov_i < 8;
+                     ooo_cov_i = ooo_cov_i + 1) begin
+                    if (dut.rob_valid[ooo_cov_i] &&
+                        (dut.rob_seq[ooo_cov_i] >
+                         dut.rob_seq[dut.rob_head_q]))
+                        ooo_coverage_hit[
+                            OOO_COV_FLUSHED_YOUNGER_INSTR] <= 1'b1;
+                    if (dut.lsq_valid[ooo_cov_i] &&
+                        (dut.lsq_seq[ooo_cov_i] >
+                         dut.rob_seq[dut.rob_head_q]))
+                        ooo_coverage_hit[
+                            OOO_COV_FLUSHED_YOUNGER_MEMORY] <= 1'b1;
+                end
+            end
+
+            if (dut.mul_wb_valid &&
+                (dut.rob_instr[dut.mul_rob_q][11:7] == 5'd0)) begin
+                if (dut.mul_writes_q)
+                    $fatal(1,
+                        "OOO_COVERAGE invariant failed: x0 M completion enabled PRF write");
+                ooo_coverage_hit[
+                    OOO_COV_X0_M_COMPLETE_NO_PRF_WRITE] <= 1'b1;
+            end
+            if (dut.memory_load_wb_valid &&
+                (dut.rob_instr[dut.mem_rob_q][11:7] == 5'd0)) begin
+                if (dut.mem_writes_q)
+                    $fatal(1,
+                        "OOO_COVERAGE invariant failed: x0 load completion enabled PRF write");
+                ooo_coverage_hit[
+                    OOO_COV_X0_LOAD_COMPLETE_NO_PRF_WRITE] <= 1'b1;
+            end
+        end
+    end
+
+    task automatic check_ooo_coverage;
+        integer coverage_bin;
+        integer coverage_hits;
+        integer coverage_missing;
+        string missing_bins;
+        begin
+            coverage_hits = 0;
+            coverage_missing = 0;
+            missing_bins = "";
+            for (coverage_bin = 0;
+                 coverage_bin < OOO_COVERAGE_BIN_COUNT;
+                 coverage_bin = coverage_bin + 1) begin
+                if (ooo_coverage_hit[coverage_bin]) begin
+                    coverage_hits = coverage_hits + 1;
+                end
+                else begin
+                    coverage_missing = coverage_missing + 1;
+                    if (missing_bins == "")
+                        missing_bins = ooo_coverage_bin_name(coverage_bin);
+                    else
+                        missing_bins = {missing_bins, ",",
+                            ooo_coverage_bin_name(coverage_bin)};
+                end
+            end
+
+            if (coverage_missing != 0) begin
+                $display(
+                    "OOO_COVERAGE status=FAIL required=%0d hit=%0d missing=%0d bins=%s",
+                    OOO_COVERAGE_BIN_COUNT, coverage_hits,
+                    coverage_missing, missing_bins);
+                $fatal(1,
+                    "OoO required semantic coverage is incomplete; missing bins=%s",
+                    missing_bins);
+            end
+            $display(
+                "OOO_COVERAGE status=PASS required=%0d hit=%0d missing=0",
+                OOO_COVERAGE_BIN_COUNT, coverage_hits);
+        end
+    endtask
 
     task automatic build_reference_oracle;
         integer oracle_word;
@@ -483,6 +799,7 @@ module ooo_core_tb;
     integer trace_index;
     integer lane;
     logic test_done;
+    logic fence_retired_seen;
     logic [63:0] reference_branch_recoveries;
     // Sample registered retirement pulses half a cycle after the DUT edge so
     // the final check completes before a following instruction can retire.
@@ -490,11 +807,22 @@ module ooo_core_tb;
         if (reset) begin
             trace_index = 0;
             test_done = 1'b0;
+            fence_retired_seen = 1'b0;
             reference_branch_recoveries = 64'b0;
         end
         else if (!test_done) begin
             for (lane = 0; lane < 2; lane = lane + 1) begin
                 if (retire_valid[lane]) begin
+                    if ((retire_instr[lane][6:0] == 7'b0001111) &&
+                        (retire_instr[lane][14:12] == 3'b000)) begin
+                        if ((lane != 0) || retire_valid[1])
+                            $fatal(1,
+                                "OoO FENCE did not retire alone in lane 0");
+                        if (retire_rd_write[lane] || dmem_req_valid)
+                            $fatal(1,
+                                "OoO FENCE retirement exposed a side effect");
+                        fence_retired_seen = 1'b1;
+                    end
                     if (trace_index >= expected_count)
                         $fatal(1, "retired more instructions than expected");
                     if (retire_pc[lane] !== expected_pc[trace_index])
@@ -553,6 +881,8 @@ module ooo_core_tb;
     integer final_i;
     initial begin
         reset = 1'b1;
+        ooo_coverage_hit = {OOO_COVERAGE_BIN_COUNT{1'b0}};
+        fence_load_block_seen = 1'b0;
         repeat (5) @(posedge clk);
         @(negedge clk);
         build_reference_oracle();
@@ -609,7 +939,15 @@ module ooo_core_tb;
             $fatal(1, "taken-branch wrong-path load reached data memory");
         if (memory_fault)
             $fatal(1, "unexpected memory fault");
+        if (!fence_retired_seen)
+            $fatal(1, "OoO directed test did not retire FENCE");
+        if (!fence_load_block_seen)
+            $fatal(1,
+                "OoO directed test did not observe a younger load blocked by FENCE");
 
+        check_ooo_coverage();
+        $display(
+            "OOO_FENCE_ORDER PASS retired_alone=1 younger_load_blocked=1");
         $display(
             "OOO_REFERENCE_STATE PASS regs=32 memory_bytes=256 memory_requests=%0d",
             expected_mem_count);

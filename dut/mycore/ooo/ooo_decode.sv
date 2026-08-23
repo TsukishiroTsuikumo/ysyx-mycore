@@ -22,7 +22,8 @@ module ooo_decode (
     localparam logic [2:0] CLASS_LOAD    = 3'd2;
     localparam logic [2:0] CLASS_STORE   = 3'd3;
     localparam logic [2:0] CLASS_CONTROL = 3'd4;
-    localparam logic [2:0] CLASS_INVALID = 3'd5;
+    localparam logic [2:0] CLASS_FENCE   = 3'd5;
+    localparam logic [2:0] CLASS_INVALID = 3'd6;
 
     logic [6:0] opcode;
     logic [2:0] funct3;
@@ -100,6 +101,16 @@ module ooo_decode (
                     3'b000, 3'b001, 3'b010: supported = 1'b1;
                     default: supported = 1'b0;
                 endcase
+            end
+
+            7'b0001111: begin // MISC-MEM
+                // FENCE is a side-effect-free, ordered barrier.  It receives
+                // its own serialized execution class in ooo_core.  FENCE.I is
+                // intentionally not accepted by this bounded experiment.
+                if (funct3 == 3'b000) begin
+                    supported = 1'b1;
+                    op_class = CLASS_FENCE;
+                end
             end
 
             7'b1100011: begin // conditional branch

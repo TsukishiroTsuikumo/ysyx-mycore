@@ -35,6 +35,7 @@ module dual_issue_core_tb #(
     localparam [6:0] OPCODE_JAL    = 7'b1101111;
     localparam [6:0] OPCODE_LUI    = 7'b0110111;
     localparam [6:0] OPCODE_AUIPC  = 7'b0010111;
+    localparam [6:0] OPCODE_MISC_MEM = 7'b0001111;
 
     reg clk;
     reg reset;
@@ -423,6 +424,236 @@ module dual_issue_core_tb #(
     reg saw_war_dual;
     reg saw_x0_dual;
     reg saw_redirect_with_response;
+    reg saw_fence_retire;
+
+    // Persistent semantic-coverage bitmap.  These bits deliberately survive
+    // the reset between directed programs: every bin is set only by an event
+    // that the integrated DUT actually presents on an active clock edge.
+    localparam integer DUAL_COV_ISSUE_ONE             = 0;
+    localparam integer DUAL_COV_ISSUE_TWO             = 1;
+    localparam integer DUAL_COV_RETIRE_ONE            = 2;
+    localparam integer DUAL_COV_RETIRE_TWO            = 3;
+    localparam integer DUAL_COV_CLASS_SIMPLE          = 4;
+    localparam integer DUAL_COV_CLASS_MULDIV          = 5;
+    localparam integer DUAL_COV_CLASS_LSU             = 6;
+    localparam integer DUAL_COV_CLASS_CONTROL         = 7;
+    localparam integer DUAL_COV_CLASS_INVALID         = 8;
+    localparam integer DUAL_COV_INTRA_PAIR_RAW        = 9;
+    localparam integer DUAL_COV_OLD_PIPELINE_RAW      = 10;
+    localparam integer DUAL_COV_STRUCTURAL_SERIALIZE  = 11;
+    localparam integer DUAL_COV_WAW_NO_FALSE_DEP      = 12;
+    localparam integer DUAL_COV_WAR_NO_FALSE_DEP      = 13;
+    localparam integer DUAL_COV_X0_NO_FALSE_DEP       = 14;
+    localparam integer DUAL_COV_MEM_REQ_BACKPRESSURE  = 15;
+    localparam integer DUAL_COV_MEM_RESPONSE_STALL    = 16;
+    localparam integer DUAL_COV_BRANCH_TAKEN          = 17;
+    localparam integer DUAL_COV_BRANCH_NOT_TAKEN      = 18;
+    localparam integer DUAL_COV_JAL                   = 19;
+    localparam integer DUAL_COV_JALR                  = 20;
+    localparam integer DUAL_COV_STALE_RESPONSE_DROP   = 21;
+    localparam integer DUAL_COVERAGE_BIN_COUNT        = 22;
+
+    reg [DUAL_COVERAGE_BIN_COUNT-1:0] dual_coverage_hit;
+
+    function automatic string dual_coverage_bin_name(input integer bin_index);
+        begin
+            case (bin_index)
+                DUAL_COV_ISSUE_ONE:
+                    dual_coverage_bin_name = "issue_one";
+                DUAL_COV_ISSUE_TWO:
+                    dual_coverage_bin_name = "issue_two";
+                DUAL_COV_RETIRE_ONE:
+                    dual_coverage_bin_name = "retire_one";
+                DUAL_COV_RETIRE_TWO:
+                    dual_coverage_bin_name = "retire_two";
+                DUAL_COV_CLASS_SIMPLE:
+                    dual_coverage_bin_name = "class_simple";
+                DUAL_COV_CLASS_MULDIV:
+                    dual_coverage_bin_name = "class_muldiv";
+                DUAL_COV_CLASS_LSU:
+                    dual_coverage_bin_name = "class_lsu";
+                DUAL_COV_CLASS_CONTROL:
+                    dual_coverage_bin_name = "class_control";
+                DUAL_COV_CLASS_INVALID:
+                    dual_coverage_bin_name = "class_invalid";
+                DUAL_COV_INTRA_PAIR_RAW:
+                    dual_coverage_bin_name = "intra_pair_raw";
+                DUAL_COV_OLD_PIPELINE_RAW:
+                    dual_coverage_bin_name = "old_pipeline_raw";
+                DUAL_COV_STRUCTURAL_SERIALIZE:
+                    dual_coverage_bin_name = "structural_serialize";
+                DUAL_COV_WAW_NO_FALSE_DEP:
+                    dual_coverage_bin_name = "waw_no_false_dependency";
+                DUAL_COV_WAR_NO_FALSE_DEP:
+                    dual_coverage_bin_name = "war_no_false_dependency";
+                DUAL_COV_X0_NO_FALSE_DEP:
+                    dual_coverage_bin_name = "x0_no_false_dependency";
+                DUAL_COV_MEM_REQ_BACKPRESSURE:
+                    dual_coverage_bin_name = "memory_request_backpressure";
+                DUAL_COV_MEM_RESPONSE_STALL:
+                    dual_coverage_bin_name = "memory_response_stall";
+                DUAL_COV_BRANCH_TAKEN:
+                    dual_coverage_bin_name = "branch_taken";
+                DUAL_COV_BRANCH_NOT_TAKEN:
+                    dual_coverage_bin_name = "branch_not_taken";
+                DUAL_COV_JAL:
+                    dual_coverage_bin_name = "jal";
+                DUAL_COV_JALR:
+                    dual_coverage_bin_name = "jalr";
+                DUAL_COV_STALE_RESPONSE_DROP:
+                    dual_coverage_bin_name = "stale_response_discard";
+                default:
+                    dual_coverage_bin_name = "unknown";
+            endcase
+        end
+    endfunction
+
+    always @(posedge clk) begin
+        if (!reset) begin
+            if (dut.issue_valid == 2'b01)
+                dual_coverage_hit[DUAL_COV_ISSUE_ONE] <= 1'b1;
+            if (dut.issue_valid == 2'b11)
+                dual_coverage_hit[DUAL_COV_ISSUE_TWO] <= 1'b1;
+            if (retire_valid == 2'b01)
+                dual_coverage_hit[DUAL_COV_RETIRE_ONE] <= 1'b1;
+            if (retire_valid == 2'b11)
+                dual_coverage_hit[DUAL_COV_RETIRE_TWO] <= 1'b1;
+
+            if (dut.issue_valid[0]) begin
+                case (dut.id_class[0])
+                    3'd0: dual_coverage_hit[DUAL_COV_CLASS_SIMPLE] <= 1'b1;
+                    3'd1: dual_coverage_hit[DUAL_COV_CLASS_MULDIV] <= 1'b1;
+                    3'd2: dual_coverage_hit[DUAL_COV_CLASS_LSU] <= 1'b1;
+                    3'd3: dual_coverage_hit[DUAL_COV_CLASS_CONTROL] <= 1'b1;
+                    3'd4: dual_coverage_hit[DUAL_COV_CLASS_INVALID] <= 1'b1;
+                    default: begin end
+                endcase
+
+                if (dut.id_branch_valid[0] && dut.id_branch_taken[0])
+                    dual_coverage_hit[DUAL_COV_BRANCH_TAKEN] <= 1'b1;
+                if (dut.id_branch_valid[0] && !dut.id_branch_taken[0])
+                    dual_coverage_hit[DUAL_COV_BRANCH_NOT_TAKEN] <= 1'b1;
+                if ((dut.id_instr[0][6:0] == OPCODE_JAL) &&
+                    (dut.id_instr[0][11:7] != 5'd0))
+                    dual_coverage_hit[DUAL_COV_JAL] <= 1'b1;
+                if (dut.id_instr[0][6:0] == OPCODE_JALR)
+                    dual_coverage_hit[DUAL_COV_JALR] <= 1'b1;
+            end
+
+            if (dut.intra_pair_raw && dut.issue_valid[0] &&
+                !dut.issue_valid[1])
+                dual_coverage_hit[DUAL_COV_INTRA_PAIR_RAW] <= 1'b1;
+            if (dut.data_hazard_stall)
+                dual_coverage_hit[DUAL_COV_OLD_PIPELINE_RAW] <= 1'b1;
+            if (dut.structural_pair_block && dut.issue_valid[0] &&
+                !dut.issue_valid[1])
+                dual_coverage_hit[DUAL_COV_STRUCTURAL_SERIALIZE] <= 1'b1;
+
+            // A real dual issue is the proof that these architectural name
+            // relationships were not mistaken for forbidden RAW hazards.
+            if (dut.issue_valid == 2'b11) begin
+                if (dut.id_writes_rd[0] && dut.id_writes_rd[1] &&
+                    (dut.id_rd_addr[0] != 5'd0) &&
+                    (dut.id_rd_addr[0] == dut.id_rd_addr[1]))
+                    dual_coverage_hit[DUAL_COV_WAW_NO_FALSE_DEP] <= 1'b1;
+                if (dut.id_writes_rd[1] &&
+                    (dut.id_rd_addr[1] != 5'd0) &&
+                    ((dut.id_rs1_used[0] &&
+                      (dut.id_rs1_addr[0] == dut.id_rd_addr[1])) ||
+                     (dut.id_rs2_used[0] &&
+                      (dut.id_rs2_addr[0] == dut.id_rd_addr[1]))))
+                    dual_coverage_hit[DUAL_COV_WAR_NO_FALSE_DEP] <= 1'b1;
+                if ((dut.id_writes_rd[0] &&
+                     (dut.id_rd_addr[0] == 5'd0)) ||
+                    (dut.id_writes_rd[1] &&
+                     (dut.id_rd_addr[1] == 5'd0)))
+                    dual_coverage_hit[DUAL_COV_X0_NO_FALSE_DEP] <= 1'b1;
+            end
+
+            if ((dm_req_rvalid && !dm_req_rready) ||
+                (dm_req_wvalid && !dm_req_wready))
+                dual_coverage_hit[DUAL_COV_MEM_REQ_BACKPRESSURE] <= 1'b1;
+            if (dut.pipe_lsu_active && dut.mem_req_sent_q &&
+                !dut.load_complete && !dut.store_complete)
+                dual_coverage_hit[DUAL_COV_MEM_RESPONSE_STALL] <= 1'b1;
+
+            // Both forms are true discards in fetch_frontend: a response
+            // consumed by the redirect edge, or one consumed by the retained
+            // stale-response countdown after a redirect.
+            if ((dut.redirect_fire && pm_resp_valid) ||
+                (!dut.redirect_fire && pm_resp_valid &&
+                 (dut.stale_response_count != 32'd0)))
+                dual_coverage_hit[DUAL_COV_STALE_RESPONSE_DROP] <= 1'b1;
+
+            if ((ISSUE_WIDTH == 1) &&
+                (dut.issue_valid[1] || retire_valid[1]))
+                $fatal(1,
+                    "DUAL_COVERAGE invariant failed: width=1 observed lane1 event issue=%b retire=%b",
+                    dut.issue_valid, retire_valid);
+        end
+    end
+
+    task automatic check_dual_coverage;
+        integer coverage_bin;
+        integer coverage_hits;
+        integer coverage_missing;
+        integer coverage_required;
+        reg [DUAL_COVERAGE_BIN_COUNT-1:0] required_mask;
+        string missing_bins;
+        begin
+            required_mask = {DUAL_COVERAGE_BIN_COUNT{1'b1}};
+            if (ISSUE_WIDTH == 1) begin
+                required_mask = {DUAL_COVERAGE_BIN_COUNT{1'b0}};
+                required_mask[DUAL_COV_ISSUE_ONE] = 1'b1;
+                required_mask[DUAL_COV_RETIRE_ONE] = 1'b1;
+            end
+
+            coverage_hits = 0;
+            coverage_missing = 0;
+            coverage_required = 0;
+            missing_bins = "";
+            for (coverage_bin = 0;
+                 coverage_bin < DUAL_COVERAGE_BIN_COUNT;
+                 coverage_bin = coverage_bin + 1) begin
+                if (required_mask[coverage_bin]) begin
+                    coverage_required = coverage_required + 1;
+                    if (dual_coverage_hit[coverage_bin]) begin
+                        coverage_hits = coverage_hits + 1;
+                    end
+                    else begin
+                        coverage_missing = coverage_missing + 1;
+                        if (missing_bins == "")
+                            missing_bins = dual_coverage_bin_name(coverage_bin);
+                        else
+                            missing_bins = {missing_bins, ",",
+                                dual_coverage_bin_name(coverage_bin)};
+                    end
+                end
+            end
+
+            if ((ISSUE_WIDTH == 1) &&
+                (dual_coverage_hit[DUAL_COV_ISSUE_TWO] ||
+                 dual_coverage_hit[DUAL_COV_RETIRE_TWO])) begin
+                $display(
+                    "DUAL_COVERAGE status=FAIL width=1 required=%0d hit=%0d missing=%0d bins=width1_dual_event_invariant",
+                    coverage_required, coverage_hits, coverage_missing);
+                $fatal(1, "width=1 semantic coverage invariant failed");
+            end
+            if (coverage_missing != 0) begin
+                $display(
+                    "DUAL_COVERAGE status=FAIL width=%0d required=%0d hit=%0d missing=%0d bins=%s",
+                    ISSUE_WIDTH, coverage_required, coverage_hits,
+                    coverage_missing, missing_bins);
+                $fatal(1,
+                    "dual-issue required semantic coverage is incomplete; missing bins=%s",
+                    missing_bins);
+            end
+
+            $display(
+                "DUAL_COVERAGE status=PASS width=%0d required=%0d hit=%0d missing=0",
+                ISSUE_WIDTH, coverage_required, coverage_hits);
+        end
+    endtask
 
     // redirect_fire is combinational from the FIFO head and is consumed on
     // the rising edge.  Sample it in that same active region; by the following
@@ -622,7 +853,18 @@ module dual_issue_core_tb #(
                     $fatal(1,
                         "%s: trace[%0d] lane%0d data got=%08x expected=%08x",
                         active_test, index, lane, commit_rd_data[lane],
-                        expected_data[index]);
+                           expected_data[index]);
+            end
+
+            if ((retire_instr[lane][6:0] == OPCODE_MISC_MEM) &&
+                (retire_instr[lane][14:12] == 3'b000)) begin
+                if ((lane != 0) || (retire_valid != 2'b01) ||
+                    commit_valid[lane] || dm_req_rvalid || dm_req_wvalid)
+                    $fatal(1,
+                        "%s: FENCE did not retire alone without side effects lane=%0d retire=%b commit=%b dmem=%b/%b",
+                        active_test, lane, retire_valid, commit_valid[lane],
+                        dm_req_rvalid, dm_req_wvalid);
+                saw_fence_retire = 1'b1;
             end
 
             trace_hash = {trace_hash[62:0], trace_hash[63]} ^
@@ -727,6 +969,7 @@ module dual_issue_core_tb #(
             saw_waw_dual = 1'b0;
             saw_war_dual = 1'b0;
             saw_x0_dual = 1'b0;
+            saw_fence_retire = 1'b0;
             dm_backpressure_enable = 1'b0;
 
             for (clear_index = 0; clear_index < IMEM_WORDS;
@@ -1040,6 +1283,28 @@ module dual_issue_core_tb #(
         end
     endtask
 
+    task automatic test_fence;
+        begin
+            begin_test("fence");
+            set_instruction(0, insn_addi(5'd1, 5'd0, 32'sd1));
+            // A FENCE in slot 1 must remain queued until it can issue and
+            // retire alone in lane 0.  The dependent instruction after it
+            // proves forward progress resumes after the barrier.
+            set_instruction(1, 32'h0ff0_000f); // fence iorw,iorw
+            set_instruction(2, insn_addi(5'd2, 5'd1, 32'sd1));
+            set_instruction(3, insn_jal_halt());
+
+            launch_test();
+            wait_for_trace(120);
+            if (!saw_fence_retire)
+                $fatal(1, "fence: serialized FENCE retirement was not observed");
+            if ((dm_read_handshake_count != 0) ||
+                (dm_write_handshake_count != 0))
+                $fatal(1, "fence: FENCE launched a data-memory request");
+            end_test();
+        end
+    endtask
+
     task automatic test_control_flow;
         reg [31:0] instruction;
         begin
@@ -1101,6 +1366,7 @@ module dual_issue_core_tb #(
         expected_count = 0;
         expected_index = 0;
         active_test = "startup";
+        dual_coverage_hit = {DUAL_COVERAGE_BIN_COUNT{1'b0}};
 
         test_performance();
         test_raw();
@@ -1108,8 +1374,10 @@ module dual_issue_core_tb #(
         test_m_extension();
         test_load_store();
         test_illegal_lsu_encodings();
+        test_fence();
         test_control_flow();
 
+        check_dual_coverage();
         $display("DUAL ISSUE CORE PASS ISSUE_WIDTH=%0d", ISSUE_WIDTH);
         $finish;
     end

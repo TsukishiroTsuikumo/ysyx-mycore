@@ -144,6 +144,26 @@ void test_i_type_integer_operations() {
     check((0x20 << 5) | 4, 0x5, 0x80000000u, 0xf8000000u, "SRAI");
 }
 
+void test_fence() {
+    mycore core;
+    core.reset();
+    core.set_reg(1, 0x12345678u);
+    core.mem_write32(0x100, 0x89abcdefu);
+    core.imem_write32(0x00, 0x0ff0000fu); // fence iorw,iorw
+    core.imem_write32(0x04, encode_i(1, 1, 0x0, 2));
+
+    const cmodel_retire_trace fence = expect_no_rd(core, 0x00, "FENCE");
+    expect_equal(fence.instr, 0x0ff0000fu, "FENCE instruction trace");
+    expect(!fence.is_read && !fence.is_write,
+           "FENCE unexpectedly produced a memory access");
+    expect_equal(core.get_reg(1), 0x12345678u,
+                 "FENCE changed an architectural register");
+    expect_equal(core.mem_peek32(0x100), 0x89abcdefu,
+                 "FENCE changed data memory");
+    expect_rd(core, 0x04, 2, 0x12345679u,
+              "instruction following FENCE");
+}
+
 void expect_branch(uint32_t funct3, uint32_t lhs, uint32_t rhs,
                    bool should_take, const std::string& name) {
     mycore core;
@@ -353,6 +373,7 @@ void test_separate_instruction_and_data_memories() {
 int main() {
     test_r_type_integer_operations();
     test_i_type_integer_operations();
+    test_fence();
     test_branches();
     test_jumps_and_upper_immediates();
     test_loads_and_stores();

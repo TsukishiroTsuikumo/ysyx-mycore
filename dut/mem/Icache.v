@@ -6,6 +6,11 @@ module Icache #(
 )(
     input                           clk,
     input                           reset,
+    // Explicit cache invalidation.  Resident lines are invalidated
+    // immediately.  The controller samples flush on clk: an already accepted
+    // memory request is drained and its response is discarded before a new
+    // CPU request can be accepted; backing memory is not modified.
+    input                           flush,
 
     // CPU Read Interface
     input                           pm_req_valid_in,
@@ -44,14 +49,16 @@ module Icache #(
     localparam integer WAY_WIDTH    = (PM_WAY_NUM <= 1) ? 1 : clog2(PM_WAY_NUM);
     localparam integer TAG_WIDTH    = 32 - OFFSET_WIDTH - INDEX_WIDTH;
     localparam [31:0]  LINE_MASK    = PM_LINE_BYTES - 1;
+    wire cache_reset = reset | flush;
 
-    localparam IDLE  = 2'd0;
-    localparam BUSY  = 2'd1;
-    localparam WRMEM = 2'd2;
-    localparam RDMEM = 2'd3;
+    localparam [2:0] IDLE  = 3'd0;
+    localparam [2:0] BUSY  = 3'd1;
+    localparam [2:0] WRMEM = 3'd2;
+    localparam [2:0] RDMEM = 3'd3;
+    localparam [2:0] DRAIN = 3'd4;
 
-    reg [1:0] current_state;
-    reg [1:0] next_state;
+    reg [2:0] current_state;
+    reg [2:0] next_state;
 
     wire cpu_req_fire;
     wire [OFFSET_WIDTH-1:0] req_offset_now;
@@ -94,7 +101,10 @@ module Icache #(
 
     reg [31:0] selected_read_word;
 
-    assign pm_req_ready_out = (current_state == IDLE);
+    // Suppress both request interfaces while flush is asserted.  This makes a
+    // request/flush coincidence unambiguous: no new CPU or memory handshake is
+    // accepted in that cycle.
+    assign pm_req_ready_out = !flush && (current_state == IDLE);
     assign cpu_req_fire = pm_req_valid_in && pm_req_ready_out;
     assign req_offset_now = pm_req_addr_in[OFFSET_WIDTH-1:0];
     assign req_index_now = pm_req_addr_in[OFFSET_WIDTH +: INDEX_WIDTH];
@@ -133,7 +143,7 @@ module Icache #(
                 (current_state == BUSY && refill_done_q && req_index_q == SET_INDEX);
 
             assign set_wr_req[set_idx] =
-                (current_state == RDMEM && ic_resp_rvalid && !ic_resp_error &&
+                (!flush && current_state == RDMEM && ic_resp_rvalid && !ic_resp_error &&
                  req_index_q == SET_INDEX);
             assign set_wb_tag_used[set_idx] = |set_wb_tag[set_idx];
             assign set_wb_data_used[set_idx] = |set_wb_data[set_idx];
@@ -147,7 +157,7 @@ module Icache #(
                 .LINE_WIDTH(PM_LINE_WIDTH)
             ) set_inst (
                 .clk( clk ),
-                .reset( reset ),
+                .reset( cache_reset ),
                 .set_tag( active_tag ),
 
                 .rd_req_in( set_rd_req[set_idx] ),
@@ -171,10 +181,20 @@ module Icache #(
         end
     endgenerate
 
-    // FSM state
+    // Flush is a synchronous controller event rather than an asynchronous
+    // reset.  Keeping mem_req_sent live until this edge is what lets the cache
+    // distinguish an unaccepted miss from an accepted response that must be
+    // drained.  The line arrays still use cache_reset for immediate
+    // invalidation.
     always @(posedge clk or posedge reset) begin
         if (reset) begin
             current_state <= IDLE;
+        end
+        else if (flush) begin
+            if (mem_req_sent && !ic_resp_rvalid)
+                current_state <= DRAIN;
+            else
+                current_state <= IDLE;
         end
         else begin
             current_state <= next_state;
@@ -222,6 +242,16 @@ module Icache #(
                 next_state = RDMEM;
             end
 
+            DRAIN: begin
+                // Exactly one response belongs to the pre-flush request.  It
+                // is deliberately consumed without refill, fault, or CPU
+                // completion, then normal request acceptance may resume.
+                if (ic_resp_rvalid)
+                    next_state = IDLE;
+                else
+                    next_state = DRAIN;
+            end
+
             default: begin
                 next_state = IDLE;
             end
@@ -234,7 +264,7 @@ module Icache #(
         ic_req_rvalid = 1'b0;
         ic_req_raddr = req_addr_q & ~LINE_MASK;
 
-        case (current_state)
+        if (!flush) case (current_state)
             BUSY: begin
                 if (selected_rd_fire) begin
                     pm_resp_valid_out = 1'b1;
@@ -280,6 +310,21 @@ module Icache #(
             ic_fault_addr <= 32'b0;
             ic_fault_resp <= 2'b00;
         end
+        else if (flush) begin
+            req_addr_q <= 32'b0;
+            req_tag_q <= {TAG_WIDTH{1'b0}};
+            req_offset_q <= {OFFSET_WIDTH{1'b0}};
+            req_index_q <= {INDEX_WIDTH{1'b0}};
+            // A response visible on the flush edge is the outstanding
+            // response itself and is discarded immediately.  Otherwise retain
+            // the accepted-request token across repeated flush cycles until
+            // DRAIN observes the response.
+            mem_req_sent <= mem_req_sent && !ic_resp_rvalid;
+            refill_done_q <= 1'b0;
+            ic_fault_valid <= 1'b0;
+            ic_fault_addr <= 32'b0;
+            ic_fault_resp <= 2'b00;
+        end
         else begin
             ic_fault_valid <= 1'b0;
             if (cpu_req_fire) begin
@@ -301,6 +346,12 @@ module Icache #(
                     ic_fault_addr <= req_addr_q & ~LINE_MASK;
                     ic_fault_resp <= ic_resp_rresp;
                 end
+            end
+            else if (current_state == DRAIN && ic_resp_rvalid) begin
+                // Drop the stale response, including an error response.  It
+                // must never allocate a line or become an architectural fault.
+                mem_req_sent <= 1'b0;
+                refill_done_q <= 1'b0;
             end
             else if (current_state == BUSY && selected_rd_fire) begin
                 refill_done_q <= 1'b0;

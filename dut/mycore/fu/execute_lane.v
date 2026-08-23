@@ -50,6 +50,7 @@ module execute_lane #(
     localparam [6:0] OPCODE_JAL      = 7'b1101111;
     localparam [6:0] OPCODE_LUI      = 7'b0110111;
     localparam [6:0] OPCODE_AUIPC    = 7'b0010111;
+    localparam [6:0] OPCODE_MISC_MEM = 7'b0001111;
 
     wire [6:0] opcode = instr[6:0];
     wire [2:0] funct3 = instr[14:12];
@@ -188,6 +189,17 @@ module execute_lane #(
                         end
                         default: begin end
                     endcase
+                end
+
+                OPCODE_MISC_MEM: begin
+                    // FENCE has no architectural result in this interface,
+                    // but it is deliberately placed in a serialized class so
+                    // issue_control cannot pair it with a younger operation.
+                    // FENCE.I remains outside the standalone core contract.
+                    if (funct3 == 3'b000) begin
+                        instr_class = CLASS_CONTROL;
+                        supported = 1'b1;
+                    end
                 end
 
                 OPCODE_BRANCH: begin
