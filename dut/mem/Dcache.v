@@ -416,7 +416,7 @@ module Dcache #(
             CROSSLINE: begin
                 // Preserve the second-line address selected by the common
                 // defaults above.  Keep this case non-empty: coverage-enabled
-                // Verilator FSM detection rejects an empty optimized branch.
+                // Coverage FSM detection rejects an empty optimized branch.
                 dc_req_raddr = line2_addr;
             end
 

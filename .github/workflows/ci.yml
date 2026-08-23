@@ -98,3 +98,13 @@ jobs:
             dual-issue-width2.log > trace-width2.txt
           test -s trace-width1.txt
           diff -u trace-width1.txt trace-width2.txt
+          width1_cycles=$(sed -n \
+            's/^PERF PASS width=1 cycles=\([0-9][0-9]*\).*/\1/p' \
+            dual-issue-width1.log)
+          width2_cycles=$(sed -n \
+            's/^PERF PASS width=2 cycles=\([0-9][0-9]*\).*/\1/p' \
+            dual-issue-width2.log)
+          test -n "$width1_cycles"
+          test -n "$width2_cycles"
+          test "$width2_cycles" -lt "$width1_cycles"
+          test $((width2_cycles * 4)) -le $((width1_cycles * 3))

@@ -3,9 +3,9 @@
 // Self-contained phase-4 acceptance test for mycore_dual.
 //
 // Example Verilator invocations from the repository root:
-//   verilator --binary --timing --sv -Wall -Wno-fatal \
+//   $ verilator --binary --timing --sv -Wall -Wno-fatal \
 //     --top-module dual_issue_core_tb -f test_bench/dual_issue/flist_dual.f
-//   verilator --binary --timing --sv -Wall -Wno-fatal \
+//   $ verilator --binary --timing --sv -Wall -Wno-fatal \
 //     --top-module dual_issue_core_tb -GISSUE_WIDTH=1 \
 //     -f test_bench/dual_issue/flist_dual.f
 //
@@ -439,7 +439,9 @@ module dual_issue_core_tb #(
 
             trace_hash = {trace_hash[62:0], trace_hash[63]} ^
                          {retire_pc[lane], retire_instr[lane]} ^
-                         {59'b0, commit_rd_addr[lane]};
+                         {26'b0, commit_valid[lane],
+                          commit_valid[lane] ? commit_rd_addr[lane] : 5'b0,
+                          commit_valid[lane] ? commit_rd_data[lane] : 32'b0};
             expected_index = expected_index + 1;
         end
     endtask
