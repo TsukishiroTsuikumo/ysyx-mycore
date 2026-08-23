@@ -1,7 +1,7 @@
 `timescale 1ns/1ps
 
 module ooo_core_tb;
-    localparam integer EXPECTED_RETIRE = 33;
+    localparam integer EXPECTED_RETIRE = 40;
 
     logic clk;
     logic reset;
@@ -195,7 +195,21 @@ module ooo_core_tb;
         imem[34] = enc_i(0, 30, 3'b000, 31, 7'b1100111);// jalr x31,0(x30)
         imem[35] = enc_i(66, 0, 3'b000, 19, 7'b0010011);// wrong PC 140
         imem[36] = enc_i(9,  0, 3'b000, 19, 7'b0010011);// target PC 144
-        imem[37] = enc_j(0, 0);                          // terminal self-loop
+        // M/load writes to x0 must complete their ROB entries without writing
+        // or broadcasting the unallocated placeholder physical destination.
+        // The following ADDIs deliberately allocate those still-free tags
+        // while the older operations remain active, exposing any late PRF
+        // corruption through the committed architectural probes.
+        imem[37] = enc_r(1, 2, 1, 3'b000, 0);            // mul x0,x1,x2
+        imem[38] = enc_i(55, 0, 3'b000, 14, 7'b0010011);// live alias candidate
+        imem[39] = enc_i(0, 0, 3'b010, 0, 7'b0000011);  // lw x0,0(x0)
+        imem[40] = enc_i(77, 0, 3'b000, 16, 7'b0010011);// live alias candidate
+        imem[41] = enc_i(256, 0, 3'b000, 17, 7'b0010011);// invalid dmem base
+        imem[42] = enc_b(12, 0, 0, 3'b000);              // taken to PC 180
+        imem[43] = enc_i(0, 17, 3'b010, 18, 7'b0000011);// wrong-path faulting load
+        imem[44] = enc_i(99, 0, 3'b000, 18, 7'b0010011);// wrong path
+        imem[45] = enc_i(88, 0, 3'b000, 18, 7'b0010011);// target PC 180
+        imem[46] = enc_j(0, 0);                          // terminal self-loop
     end
 
     // Instruction memory: one-cycle response, one outstanding transaction.
@@ -232,6 +246,8 @@ module ooo_core_tb;
     logic [31:0] dmem_addr_q;
     logic [31:0] dmem_wdata_q;
     logic [3:0] dmem_wstrb_q;
+    integer dmem_request_count;
+    logic wrong_path_read_seen;
     integer byte_i;
     assign dmem_req_ready = !dmem_pending_q && (cycle_count[1:0] != 2'b01);
 
@@ -246,6 +262,8 @@ module ooo_core_tb;
             dmem_resp_valid <= 1'b0;
             dmem_resp_rdata <= 32'b0;
             dmem_resp_error <= 1'b0;
+            dmem_request_count <= 0;
+            wrong_path_read_seen <= 1'b0;
             for (byte_i = 0; byte_i < 256; byte_i = byte_i + 1)
                 data_mem[byte_i] <= 8'b0;
         end
@@ -261,6 +279,9 @@ module ooo_core_tb;
                 dmem_addr_q <= dmem_req_addr;
                 dmem_wdata_q <= dmem_req_wdata;
                 dmem_wstrb_q <= dmem_req_wstrb;
+                dmem_request_count <= dmem_request_count + 1;
+                if (!dmem_req_write && (dmem_req_addr == 32'd256))
+                    wrong_path_read_seen <= 1'b1;
             end
             if (dmem_pending_q) begin
                 if (dmem_delay_q != 0) begin
@@ -345,6 +366,13 @@ module ooo_core_tb;
         expect_trace(30,132, 1, 30, 32'd144);
         expect_trace(31,136, 1, 31, 32'd140);
         expect_trace(32,144, 1, 19, 32'd9);
+        expect_trace(33,148, 0,  0, 32'd0);
+        expect_trace(34,152, 1, 14, 32'd55);
+        expect_trace(35,156, 0,  0, 32'd0);
+        expect_trace(36,160, 1, 16, 32'd77);
+        expect_trace(37,164, 1, 17, 32'd256);
+        expect_trace(38,168, 0,  0, 32'd0);
+        expect_trace(39,180, 1, 18, 32'd88);
     end
 
     integer trace_index;
@@ -423,7 +451,11 @@ module ooo_core_tb;
         if (arch_regs[8] !== 32'd42) $fatal(1, "load mismatch x8");
         if (arch_regs[9] !== 32'd4) $fatal(1, "DIV mismatch x9");
         if (arch_regs[13] !== 32'd5) $fatal(1, "same-packet WAW failure");
+        if (arch_regs[14] !== 32'd55) $fatal(1, "x0 MUL polluted live PRF state");
         if (arch_regs[15] !== 32'd6) $fatal(1, "REM mismatch x15");
+        if (arch_regs[16] !== 32'd77) $fatal(1, "x0 load polluted live PRF state");
+        if (arch_regs[17] !== 32'd256) $fatal(1, "wrong-path load base mismatch");
+        if (arch_regs[18] !== 32'd88) $fatal(1, "wrong-path load recovery failed");
         if (arch_regs[19] !== 32'd9) $fatal(1, "JALR recovery failed");
         if (arch_regs[20] !== 32'd7) $fatal(1, "branch recovery failed");
         if (arch_regs[21] !== 32'd0) $fatal(1, "wrong branch path committed");
@@ -444,9 +476,14 @@ module ooo_core_tb;
             $fatal(1, "ROB-full condition was not exercised");
         if (load_block_cycles == 0)
             $fatal(1, "conservative store/load blocking was not exercised");
-        if (branch_recoveries != 3)
-            $fatal(1, "expected three branch/JAL/JALR recoveries, got %0d",
+        if (branch_recoveries != 4)
+            $fatal(1, "expected four control-flow recoveries, got %0d",
                    branch_recoveries);
+        if (dmem_request_count != 3)
+            $fatal(1, "wrong data request count: got %0d expected 3",
+                   dmem_request_count);
+        if (wrong_path_read_seen)
+            $fatal(1, "taken-branch wrong-path load reached data memory");
         if (memory_fault)
             $fatal(1, "unexpected memory fault");
 

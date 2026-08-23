@@ -1,4 +1,4 @@
-name: UVM elaboration
+name: UVM regression and coverage
 
 on:
   push:
@@ -12,11 +12,14 @@ permissions:
 
 jobs:
   verilator-uvm-build:
-    name: Verilator/UVM build
+    name: Verilator/UVM regression
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     container:
       image: verilator/verilator:v5.050
+    defaults:
+      run:
+        shell: bash
     env:
       UVM_HOME: ${{ github.workspace }}/.ci/uvm-core
     steps:
@@ -61,6 +64,31 @@ jobs:
             exit 1
           fi
 
+      - name: Build and run active AXI UVM master smoke
+        run: |
+          set -o pipefail
+          verilator --binary --timing -sv -Wall -Wno-fatal --assert \
+            --top-module axi_master_uvm_tb \
+            --Mdir obj_dir_axi_uvm \
+            -I"$UVM_HOME/src" \
+            +incdir+"$UVM_HOME/src" \
+            "$UVM_HOME/src/uvm_pkg.sv" \
+            -f test_bench/axi/flist_axi_master_uvm.f \
+            +define+UVM_NO_DPI
+          VERILATOR_SOLVER="z3 --in" \
+            ./obj_dir_axi_uvm/Vaxi_master_uvm_tb \
+            +UVM_TESTNAME=axi_master_test 2>&1 | tee log/axi-active-uvm.log
+          grep -Eq 'AXI_ACTIVE_UVM_TEST.*PASS transactions=3 checks=9' \
+            log/axi-active-uvm.log
+          grep -Eq 'AXI_ACCEPTANCE.*status=PASS' log/axi-active-uvm.log
+          grep -Eq 'AXI_PROTOCOL_REPORT:.*procedural_errors=0.*pending_aw=0.*pending_w=0.*pending_b=0.*pending_r=0' \
+            log/axi-active-uvm.log
+          if grep -Eq 'UVM_(ERROR|FATAL)[[:space:]]*:[[:space:]]*[1-9]' \
+            log/axi-active-uvm.log; then
+            echo 'Active AXI UVM test reported errors or fatals'
+            exit 1
+          fi
+
       - name: Generate line report and retain toggle database
         run: |
           test -s obj_dir/coverage.dat
@@ -75,4 +103,5 @@ jobs:
             obj_dir/coverage.dat
             obj_dir/coverage.info
             log/axi-smoke.log
+            log/axi-active-uvm.log
           if-no-files-found: error

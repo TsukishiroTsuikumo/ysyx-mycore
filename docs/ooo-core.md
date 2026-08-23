@@ -1,4 +1,4 @@
-# Bounded RV32IM out-of-order experiment
+# Bounded RV32I/M execution-subset out-of-order experiment
 
 `dut/mycore/ooo/ooo_core.sv` is a standalone phase-5 experiment.  It does not
 replace or alter the repository's stable in-order core.  Its purpose is to make
@@ -22,13 +22,15 @@ testable before they are connected to the cache/AXI integration top.
 - A conservative LSQ records memory operations in program order.  Stores only
   become externally visible at the ROB head.  A load waits for **every** older
   store to retire; this stronger rule covers unresolved store address/data
-  hazards without speculative store-to-load forwarding.
+  hazards without speculative store-to-load forwarding.  A load younger than
+  the single unresolved control-flow instruction also waits until that control
+  commits, so a wrong-path read cannot reach memory or set the fault diagnostic.
 - Branches are predicted not taken.  BEQ/BNE/BLT/BGE/BLTU/BGEU, JAL, and JALR
   calculate their actual next PC out of order.  A mismatch redirects at the ROB
   head, flushes every younger ROB/RS/LSQ/execution entry, restores the RAT from
   the committed RAT (including a JAL/JALR link destination), and reconstructs
-  the free mask.  An outstanding wrong-path load response is explicitly
-  discarded.
+  the free mask.  A data response already outstanding when recovery becomes
+  necessary is explicitly discarded.
 - Two ordered retirement records expose PC, instruction, register-write flag,
   architectural destination, and result for an external reference-model
   scoreboard.
@@ -38,17 +40,22 @@ testable before they are connected to the cache/AXI integration top.
 This is not a complete privileged RISC-V processor and should not be described
 as one.
 
-- RV32IM user instructions only; no compressed instructions, CSR, fence,
-  exception, interrupt, privilege, MMU, or atomics.
+- Documented RV32I integer/control/load-store subset plus RV32M arithmetic; no
+  compressed instructions, CSR, fence, exception, interrupt, privilege, MMU,
+  or atomics.
 - Misaligned accesses are outside the contract.  The memory error input sets a
   sticky diagnostic bit; it does not raise an architectural trap.
 - Unsupported encodings retire as inert instructions because there is no
   illegal-instruction exception path.
-- At most one instruction fetch and one data request are outstanding.  A data
-  response must arrive at least one cycle after request acceptance.
+- At most one instruction fetch and one data request are outstanding.
+  Instruction and data responses must arrive at least one cycle after request
+  acceptance; zero-cycle responses are outside this interface contract.
 - Only one unresolved control-flow instruction may be in flight.  Resolution
   and recovery happen at the ROB head rather than at execute, trading
   performance for a small and precise recovery implementation.
+- Control-flow targets are required to be four-byte aligned.  JALR clears bit
+  zero, but the experiment has no instruction-address-misaligned exception for
+  a remaining bit-one target.
 - There is one LSQ address-generation lane, no speculative memory dependence
   predictor, and no store-to-load forwarding.
 - The monotonically increasing 32-bit age sequence is not intended for a run
@@ -71,8 +78,9 @@ exercising:
   complete and the ROB reaches full occupancy;
 - inter-packet and same-packet RAW, WAR, and WAW renaming;
 - store/load ordering with request backpressure and delayed responses;
+- suppression of a faulting wrong-path load behind a taken branch;
 - signed and unsigned RV32M multiply/divide/remainder variants;
-- x0 invariance; and
+- x0 invariance, including M/load results whose destination is x0; and
 - taken conditional branch, JAL, and JALR recovery with observable wrong-path
   instructions that must never retire.
 

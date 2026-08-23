@@ -1,4 +1,46 @@
-# AXI passive verification
+# AXI verification
+
+The package now provides both active and passive AXI4 components:
+
+- `axi_sequencer`, `axi_driver`, and `axi_agent` for master traffic;
+- `axi_monitor`, `axi_coverage`, and `axi_observer` for passive observation;
+- `axi_master_sequence` and `axi_master_test` as an executable active-agent
+  smoke test.
+
+The active driver can transmit FIXED/INCR/WRAP metadata and arbitrary burst
+lengths represented by the transaction payload queues, together with byte
+strobes, USER and owner sidebands, response capture, and programmable address,
+W-beat, and B/R-ready delays. The executable smoke validates only aligned,
+full-width, four-beat INCR lines, matching the current RTL subset; the other
+metadata forms are not yet acceptance-tested. The driver intentionally allows
+one outstanding sequence item at a time, so multi-ID out-of-order generation
+is deferred to later stress tests.
+
+## Active master smoke
+
+`axi_master_uvm_tb.sv` connects an active 32-bit AXI agent to the deterministic
+backpressured `axi_random_slave`. The test performs an instruction-owner line
+read, a data-owner line write, and a data-owner readback. The agent's monitor is
+connected to the existing coverage subscriber, and the protocol checker is
+enabled with final-quiescence checking.
+
+With `UVM_HOME` pointing at Accellera UVM 2020.3.1, build and run it from the
+repository root:
+
+```sh
+verilator --binary --timing -sv -Wall -Wno-fatal --assert \
+  --top-module axi_master_uvm_tb --Mdir obj_dir_axi_uvm \
+  -I"$UVM_HOME/src" +incdir+"$UVM_HOME/src" \
+  "$UVM_HOME/src/uvm_pkg.sv" \
+  -f test_bench/axi/flist_axi_master_uvm.f +define+UVM_NO_DPI
+./obj_dir_axi_uvm/Vaxi_master_uvm_tb +UVM_TESTNAME=axi_master_test
+```
+
+A successful run prints `AXI_ACTIVE_UVM_TEST ... PASS`, an
+`AXI_ACCEPTANCE ... status=PASS` report, and an AXI protocol report with zero
+procedural errors and no pending transactions.
+
+## Passive core observation
 
 The passive monitor, coverage subscriber, and protocol checker are connected to
 the current core testbench. `test_bench/test_bench.sv` taps the shared bus inside
@@ -53,14 +95,20 @@ until the `VALID && READY` handshake.
 The initial RTL adapters do not expose AXI `REGION` or `USER` ports. A bridge
 in the standalone top should tie the corresponding interface fields to zero.
 
-For another UVM environment, the packaged observer can be instantiated using
-the same width parameters as the interface:
+For another UVM environment, the packaged active agent or passive observer can
+be instantiated using the same width parameters as the interface:
 
 ```systemverilog
 typedef virtual axi_if #(32, 32, 2, 1, 1) axi_vif_t;
+typedef axi_agent #(32, 32, 2, 1, 1) axi_agent_t;
 typedef axi_observer #(32, 32, 2, 1, 1) axi_observer_t;
+axi_agent_t axi_agent;
+axi_observer_t axi_obs;
 
-uvm_config_db#(axi_vif_t)::set(this, "axi_obs*", "vif", axi_bus);
+uvm_config_db#(uvm_active_passive_enum)::set(
+    this, "axi_agent", "is_active", UVM_ACTIVE);
+uvm_config_db#(axi_vif_t)::set(this, "axi_*", "vif", axi_bus);
+axi_agent = axi_agent_t::type_id::create("axi_agent", this);
 axi_obs = axi_observer_t::type_id::create("axi_obs", this);
 ```
 

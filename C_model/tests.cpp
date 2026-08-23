@@ -340,6 +340,6 @@ int main() {
     test_loads_and_stores();
     test_m_extension();
     test_x0_is_immutable();
-    std::cout << "PASS: C model RV32IM unit tests" << std::endl;
+    std::cout << "PASS: C model RV32I/M execution-subset unit tests" << std::endl;
     return 0;
 }

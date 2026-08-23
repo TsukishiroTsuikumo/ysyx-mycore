@@ -56,6 +56,13 @@ class axi_transaction #(
     bit [1:0]            bresp;
     bit [USER_WIDTH-1:0] buser;
 
+    // Master-driver timing controls.  Keeping these controls on the sequence
+    // item makes directed and constrained-random sequences able to request
+    // channel stalls without baking a policy into the reusable driver.
+    int unsigned address_delay_cycles;
+    int unsigned beat_delay_cycles;
+    int unsigned response_ready_delay_cycles;
+
     // Per-transaction observations used by the explicit coverage subscriber.
     bit aw_backpressure;
     bit w_backpressure;
@@ -81,6 +88,9 @@ class axi_transaction #(
         super.new(name);
         last_ok = 1'b1;
         beat_count_ok = 1'b1;
+        address_delay_cycles = 0;
+        beat_delay_cycles = 0;
+        response_ready_delay_cycles = 0;
     endfunction
 
     function int unsigned expected_beats();
@@ -97,12 +107,14 @@ class axi_transaction #(
 
     virtual function string convert2string();
         return $sformatf(
-            "%s owner=%0d id=0x%0x addr=0x%0x len=%0d size=%0d burst=%0d beats=%0d last_ok=%0d beat_count_ok=%0d resp=0x%0x",
+            "%s owner=%0d id=0x%0x addr=0x%0x len=%0d size=%0d burst=%0d beats=%0d last_ok=%0d beat_count_ok=%0d resp=0x%0x delays=%0d/%0d/%0d",
             (direction == AXI_WRITE) ? "WRITE" : "READ",
             owner, id, addr, len, size, burst, data_q.size(),
             last_ok, beat_count_ok,
             (direction == AXI_WRITE && resp_q.size() == 0) ? bresp :
-                ((resp_q.size() == 0) ? AXI_RESP_OKAY : resp_q[$]))
+                ((resp_q.size() == 0) ? AXI_RESP_OKAY : resp_q[$]),
+            address_delay_cycles, beat_delay_cycles,
+            response_ready_delay_cycles)
         ;
     endfunction
 

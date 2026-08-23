@@ -398,6 +398,7 @@ module ooo_core #(
 
     logic [31:0] next_seq_q;
     logic unresolved_branch_q;
+    logic [31:0] unresolved_branch_seq_q;
 
     genvar arch_probe;
     generate
@@ -575,6 +576,7 @@ module ooo_core #(
     logic [M_COUNT_W-1:0] mul_count_q;
     logic [ROB_W-1:0] mul_rob_q;
     logic [PRF_W-1:0] mul_pdst_q;
+    logic mul_writes_q;
     logic [31:0] mul_result_q;
     logic mul_wb_valid;
     assign mul_wb_valid = mul_busy_q && (mul_count_q == 1);
@@ -706,6 +708,7 @@ module ooo_core #(
     logic [LSQ_W-1:0] mem_lsq_q;
     logic [ROB_W-1:0] mem_rob_q;
     logic [PRF_W-1:0] mem_pdst_q;
+    logic mem_writes_q;
     logic [2:0] mem_funct3_q;
     logic [1:0] mem_byte_offset_q;
 
@@ -727,24 +730,30 @@ module ooo_core #(
                     mem_candidate_i = mem_i;
             end
 
-            // A load waits behind every older store.  This is stronger than
-            // merely waiting for unresolved addresses and avoids speculative
-            // store-to-load forwarding in the bounded implementation.
+            // A load waits behind every older store and behind an older
+            // unresolved control instruction.  This avoids both speculative
+            // store forwarding and externally visible wrong-path reads.
             if (mem_candidate_i < 0) begin
                 for (mem_i = 0; mem_i < LSQ_DEPTH; mem_i = mem_i + 1) begin
                     if (lsq_valid[mem_i] && !lsq_is_store[mem_i] &&
                         lsq_addr_valid[mem_i] && !lsq_issued[mem_i]) begin
-                        older_store_found = 1'b0;
-                        for (mem_j = 0; mem_j < LSQ_DEPTH; mem_j = mem_j + 1) begin
-                            if (lsq_valid[mem_j] && lsq_is_store[mem_j] &&
-                                (lsq_seq[mem_j] < lsq_seq[mem_i]))
-                                older_store_found = 1'b1;
-                        end
-                        if (older_store_found)
+                        if (unresolved_branch_q &&
+                            (lsq_seq[mem_i] > unresolved_branch_seq_q)) begin
                             any_load_blocked = 1'b1;
-                        else if (lsq_seq[mem_i] < best_load_seq) begin
-                            best_load_seq = lsq_seq[mem_i];
-                            mem_candidate_i = mem_i;
+                        end
+                        else begin
+                            older_store_found = 1'b0;
+                            for (mem_j = 0; mem_j < LSQ_DEPTH; mem_j = mem_j + 1) begin
+                                if (lsq_valid[mem_j] && lsq_is_store[mem_j] &&
+                                    (lsq_seq[mem_j] < lsq_seq[mem_i]))
+                                    older_store_found = 1'b1;
+                            end
+                            if (older_store_found)
+                                any_load_blocked = 1'b1;
+                            else if (lsq_seq[mem_i] < best_load_seq) begin
+                                best_load_seq = lsq_seq[mem_i];
+                                mem_candidate_i = mem_i;
+                            end
                         end
                     end
                 end
@@ -755,14 +764,20 @@ module ooo_core #(
             for (mem_i = 0; mem_i < LSQ_DEPTH; mem_i = mem_i + 1) begin
                 if (lsq_valid[mem_i] && !lsq_is_store[mem_i] &&
                     lsq_addr_valid[mem_i] && !lsq_issued[mem_i]) begin
-                    older_store_found = 1'b0;
-                    for (mem_j = 0; mem_j < LSQ_DEPTH; mem_j = mem_j + 1) begin
-                        if (lsq_valid[mem_j] && lsq_is_store[mem_j] &&
-                            (lsq_seq[mem_j] < lsq_seq[mem_i]))
-                            older_store_found = 1'b1;
-                    end
-                    if (older_store_found)
+                    if (unresolved_branch_q &&
+                        (lsq_seq[mem_i] > unresolved_branch_seq_q)) begin
                         any_load_blocked = 1'b1;
+                    end
+                    else begin
+                        older_store_found = 1'b0;
+                        for (mem_j = 0; mem_j < LSQ_DEPTH; mem_j = mem_j + 1) begin
+                            if (lsq_valid[mem_j] && lsq_is_store[mem_j] &&
+                                (lsq_seq[mem_j] < lsq_seq[mem_i]))
+                                older_store_found = 1'b1;
+                        end
+                        if (older_store_found)
+                            any_load_blocked = 1'b1;
+                    end
                 end
             end
         end
@@ -854,11 +869,13 @@ module ooo_core #(
             rob_count_q <= {ROB_COUNT_W{1'b0}};
             next_seq_q <= 32'b0;
             unresolved_branch_q <= 1'b0;
+            unresolved_branch_seq_q <= 32'b0;
 
             mul_busy_q <= 1'b0;
             mul_count_q <= {M_COUNT_W{1'b0}};
             mul_rob_q <= {ROB_W{1'b0}};
             mul_pdst_q <= {PRF_W{1'b0}};
+            mul_writes_q <= 1'b0;
             mul_result_q <= 32'b0;
 
             mem_pending_q <= 1'b0;
@@ -871,6 +888,7 @@ module ooo_core #(
             mem_lsq_q <= {LSQ_W{1'b0}};
             mem_rob_q <= {ROB_W{1'b0}};
             mem_pdst_q <= {PRF_W{1'b0}};
+            mem_writes_q <= 1'b0;
             mem_funct3_q <= 3'b0;
             mem_byte_offset_q <= 2'b0;
 
@@ -995,6 +1013,7 @@ module ooo_core #(
                 rob_tail_q <= {ROB_W{1'b0}};
                 rob_count_q <= {ROB_COUNT_W{1'b0}};
                 unresolved_branch_q <= 1'b0;
+                unresolved_branch_seq_q <= 32'b0;
                 mul_busy_q <= 1'b0;
                 mul_count_q <= {M_COUNT_W{1'b0}};
                 mem_pending_q <= 1'b0;
@@ -1093,6 +1112,7 @@ module ooo_core #(
                     mul_count_q <= M_LATENCY;
                     mul_rob_q <= rs_rob[mul_sel_i];
                     mul_pdst_q <= rs_pdst[mul_sel_i];
+                    mul_writes_q <= rs_writes_rd[mul_sel_i];
                     mul_result_q <= muldiv_result(rs_instr[mul_sel_i],
                                                   rs_src1_value[mul_sel_i],
                                                   rs_src2_value[mul_sel_i]);
@@ -1105,18 +1125,20 @@ module ooo_core #(
                     mul_count_q <= {M_COUNT_W{1'b0}};
                     rob_ready[mul_rob_q] <= 1'b1;
                     rob_value[mul_rob_q] <= mul_result_q;
-                    prf_value[mul_pdst_q] <= mul_result_q;
-                    prf_ready[mul_pdst_q] <= 1'b1;
-                    for (i = 0; i < RS_DEPTH; i = i + 1) begin
-                        if (rs_valid[i] && !rs_src1_ready[i] &&
-                            (rs_src1_tag[i] == mul_pdst_q)) begin
-                            rs_src1_ready[i] <= 1'b1;
-                            rs_src1_value[i] <= mul_result_q;
-                        end
-                        if (rs_valid[i] && !rs_src2_ready[i] &&
-                            (rs_src2_tag[i] == mul_pdst_q)) begin
-                            rs_src2_ready[i] <= 1'b1;
-                            rs_src2_value[i] <= mul_result_q;
+                    if (mul_writes_q) begin
+                        prf_value[mul_pdst_q] <= mul_result_q;
+                        prf_ready[mul_pdst_q] <= 1'b1;
+                        for (i = 0; i < RS_DEPTH; i = i + 1) begin
+                            if (rs_valid[i] && !rs_src1_ready[i] &&
+                                (rs_src1_tag[i] == mul_pdst_q)) begin
+                                rs_src1_ready[i] <= 1'b1;
+                                rs_src1_value[i] <= mul_result_q;
+                            end
+                            if (rs_valid[i] && !rs_src2_ready[i] &&
+                                (rs_src2_tag[i] == mul_pdst_q)) begin
+                                rs_src2_ready[i] <= 1'b1;
+                                rs_src2_value[i] <= mul_result_q;
+                            end
                         end
                     end
                 end
@@ -1157,6 +1179,7 @@ module ooo_core #(
                     mem_lsq_q <= mem_candidate_i[LSQ_W-1:0];
                     mem_rob_q <= lsq_rob[mem_candidate_i];
                     mem_pdst_q <= lsq_pdst[mem_candidate_i];
+                    mem_writes_q <= rob_writes_rd[lsq_rob[mem_candidate_i]];
                     mem_funct3_q <= lsq_funct3[mem_candidate_i];
                     mem_byte_offset_q <= lsq_byte_offset[mem_candidate_i];
                 end
@@ -1177,19 +1200,21 @@ module ooo_core #(
                     else begin
                         rob_ready[mem_rob_q] <= 1'b1;
                         rob_value[mem_rob_q] <= memory_load_value;
-                        prf_value[mem_pdst_q] <= memory_load_value;
-                        prf_ready[mem_pdst_q] <= 1'b1;
                         lsq_valid[mem_lsq_q] <= 1'b0;
-                        for (i = 0; i < RS_DEPTH; i = i + 1) begin
-                            if (rs_valid[i] && !rs_src1_ready[i] &&
-                                (rs_src1_tag[i] == mem_pdst_q)) begin
-                                rs_src1_ready[i] <= 1'b1;
-                                rs_src1_value[i] <= memory_load_value;
-                            end
-                            if (rs_valid[i] && !rs_src2_ready[i] &&
-                                (rs_src2_tag[i] == mem_pdst_q)) begin
-                                rs_src2_ready[i] <= 1'b1;
-                                rs_src2_value[i] <= memory_load_value;
+                        if (mem_writes_q) begin
+                            prf_value[mem_pdst_q] <= memory_load_value;
+                            prf_ready[mem_pdst_q] <= 1'b1;
+                            for (i = 0; i < RS_DEPTH; i = i + 1) begin
+                                if (rs_valid[i] && !rs_src1_ready[i] &&
+                                    (rs_src1_tag[i] == mem_pdst_q)) begin
+                                    rs_src1_ready[i] <= 1'b1;
+                                    rs_src1_value[i] <= memory_load_value;
+                                end
+                                if (rs_valid[i] && !rs_src2_ready[i] &&
+                                    (rs_src2_tag[i] == mem_pdst_q)) begin
+                                    rs_src2_ready[i] <= 1'b1;
+                                    rs_src2_value[i] <= memory_load_value;
+                                end
                             end
                         end
                     end
@@ -1226,8 +1251,10 @@ module ooo_core #(
                             prf_ready[slot_new_pdst[dispatch_lane]] <= 1'b0;
                         end
                         if (slot_supported[dispatch_lane] &&
-                            (slot_class[dispatch_lane] == CLASS_CONTROL))
+                            (slot_class[dispatch_lane] == CLASS_CONTROL)) begin
                             unresolved_branch_q <= 1'b1;
+                            unresolved_branch_seq_q <= next_seq_q + dispatch_lane;
+                        end
 
                         if (slot_supported[dispatch_lane]) begin
                             dispatch_rs = slot_rs_index[dispatch_lane];
