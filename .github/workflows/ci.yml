@@ -109,6 +109,22 @@ jobs:
           test "$width2_cycles" -lt "$width1_cycles"
           test $((width2_cycles * 4)) -le $((width1_cycles * 3))
 
+  cache-directed:
+    name: Directed cache semantic coverage
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    container:
+      image: verilator/verilator:v5.050
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Build and run ICache/DCache directed gate
+        run: make -C test_bench/cache run
+
   dual-axi-integration:
     name: Dual-issue cache/AXI integration
     runs-on: ubuntu-24.04
