@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reference-model:
+    name: Reference model and regression helpers
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Run reference-model unit tests
+        run: make cmodel-test
+
+      - name: Run reference-model unit tests with UBSan
+        run: >-
+          make cmodel-test
+          C_MODEL_FLAGS="-std=c++17 -Wall -Wextra -I C_model
+          -fsanitize=undefined -fno-sanitize-recover=all"
+
+      - name: Test regression and coverage helpers
+        run: python3 -m unittest scripts.test_regression scripts.test_coverage
+
+      - name: Check Python syntax
+        run: >-
+          python3 -m py_compile scripts/regression.py
+          scripts/check_coverage.py scripts/check_dut_verilog.py
+          scripts/test_regression.py scripts/test_coverage.py
+
+  dut-verilog:
+    name: IEEE 1364-2005 DUT gate
+    runs-on: ubuntu-24.04
+    container:
+      image: verilator/verilator:v5.050
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Report Verilator version
+        run: verilator --version
+
+      - name: Reject SystemVerilog in dut
+        run: make dut-syntax
+
+      - name: Lint the integrated DUT as Verilog-2005
+        run: make lint-dut
+
+  standalone-subsystems:
+    name: AXI and directed cache gates
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    container:
+      image: verilator/verilator:v5.050
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Build and run standalone AXI subsystem
+        run: |
+          set -o pipefail
+          make axi-test 2>&1 | tee axi-subsystem.log
+          grep -Fq 'AXI_SUBSYSTEM_TEST PASS' axi-subsystem.log
+
+      - name: Build and run directed ICache/DCache gate
+        run: make cache-test

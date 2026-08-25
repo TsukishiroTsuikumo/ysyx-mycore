@@ -21,7 +21,14 @@ module mycore (
   input           dm_req_wready_in,
   output   [3:0]  dm_req_wstrb_out,
   output  [31:0]  dm_req_wdata_out,
-  input           dm_resp_wvalid_in
+  input           dm_resp_wvalid_in,
+
+  output   [1:0]  retire_valid_out,
+  output  [63:0]  retire_pc_out,
+  output  [63:0]  retire_instr_out,
+  output   [1:0]  retire_rd_write_out,
+  output   [9:0]  retire_rd_addr_out,
+  output  [63:0]  retire_rd_data_out
 );
 
   // ------------------------------------------- //
@@ -518,5 +525,29 @@ module mycore (
   wire [31:0] w1_in_wb = is_ld_wb ? dm_rd_wb : pipe_mem_wb;
   wire        commit_valid = sel_rd_mem_wb && (!is_ld_wb || dm_resp_rvalid_in) && valid_mem_wb && valid[3];
   wire        retire_valid = valid_mem_wb && valid[3];
+
+  // Stable, flattened retirement interface.  Lane 0 occupies the low bits;
+  // this single-issue implementation permanently leaves lane 1 inactive.
+  assign retire_valid_out = {1'b0, retire_valid};
+  assign retire_pc_out = {32'b0, PC_mem_wb};
+  assign retire_instr_out = {32'b0, instr_mem_wb};
+  assign retire_rd_write_out = {1'b0, commit_valid};
+  assign retire_rd_addr_out = {5'b0, rd_addr_wb};
+  assign retire_rd_data_out = {32'b0, w1_in_wb};
+
+`ifndef SYNTHESIS
+  // Stable verification hook.  Testbench code must not depend on the
+  // implementation-specific register-file hierarchy as the core evolves.
+  task write_arch_reg;
+    input [4:0] address;
+    input [31:0] data;
+    begin
+      if (address == 5'b0)
+        regfile.reg_val[0] = 32'b0;
+      else
+        regfile.reg_val[address] = data;
+    end
+  endtask
+`endif
 
 endmodule

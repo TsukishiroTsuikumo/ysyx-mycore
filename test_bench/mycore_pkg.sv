@@ -5,6 +5,7 @@
 package mycore_pkg;
 
     import uvm_pkg::*;
+    import axi_verif_pkg::*;
     `include "uvm_macros.svh"
 
     `ifndef TEST_TIMES
@@ -23,6 +24,8 @@ package mycore_pkg;
     `include "item/probe_item.svh"
     `include "item/icache_item.svh"
     `include "item/program_image.svh"
+
+    `include "coverage/isa_coverage.svh"
 
     `include "sequence/instr_sequence.svh"
     `include "sequence/fetch_data_sequence.svh"

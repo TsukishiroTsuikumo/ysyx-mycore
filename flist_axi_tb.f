@@ -1,0 +1,11 @@
++incdir+./dut/axi
+dut/axi/icache_axi_adapter.v
+dut/axi/dcache_axi_adapter.v
+dut/axi/axi_read_arbiter.v
+dut/axi/axi_addr_decoder.v
+dut/axi/axi_error_slave.v
+dut/mem/axi_ram_slave.v
+dut/axi/cache_axi_memory_system.v
+test_bench/axi/axi_random_slave.sv
+test_bench/axi/axi_test_checker.sv
+test_bench/axi/axi_subsystem_tb.sv

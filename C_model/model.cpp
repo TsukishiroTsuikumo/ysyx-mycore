@@ -26,18 +26,29 @@ inline uint32_t rem_signed(uint32_t lhs, uint32_t rhs) {
 void mycore::reset() {
     state_ = mycore_state{};
     mem_.clear();
+    imem_.clear();
+    use_separate_imem_ = false;
 }
 
 void mycore::load_image() {
+    imem_.clear();
+    use_separate_imem_ = false;
     mem_.load_image();
 }
 
 void mycore::load_image(const std::string& filename) {
+    imem_.clear();
+    use_separate_imem_ = false;
     mem_.load_image(filename);
 }
 
 void mycore::mem_write32(uint32_t addr, uint32_t data) {
     mem_.write32(addr, data);
+}
+
+void mycore::imem_write32(uint32_t addr, uint32_t data) {
+    use_separate_imem_ = true;
+    imem_.write32(addr, data);
 }
 
 void mycore::set_pc(uint32_t pc) {
@@ -50,10 +61,27 @@ void mycore::set_reg(uint32_t idx, uint32_t value) {
     }
 }
 
+uint32_t mycore::get_reg(uint32_t idx) const {
+    return (idx < state_.regs.size()) ? state_.regs[idx] : 0;
+}
+
+uint8_t mycore::mem_peek8(uint32_t addr) const {
+    return mem_.peek8(addr);
+}
+
+uint32_t mycore::mem_peek32(uint32_t addr) const {
+    return (static_cast<uint32_t>(mem_.peek8(addr + 3)) << 24) |
+           (static_cast<uint32_t>(mem_.peek8(addr + 2)) << 16) |
+           (static_cast<uint32_t>(mem_.peek8(addr + 1)) << 8) |
+           mem_.peek8(addr);
+}
+
 cmodel_retire_trace mycore::step() {
     static int step_count = 0;
-    const bool has = mem_.has_word(state_.pc);
-    const uint32_t instr = has ? mem_.read32(state_.pc) : 0x00000013u;
+    const memory& instruction_memory = use_separate_imem_ ? imem_ : mem_;
+    const bool has = instruction_memory.has_word(state_.pc);
+    const uint32_t instr = has ? instruction_memory.read32(state_.pc)
+                               : 0x00000013u;
     const uint32_t pc = state_.pc;
 
     step_count++;
@@ -75,6 +103,17 @@ cmodel_retire_trace mycore::step() {
     trace.instr = instr;
 
     switch (opcode) {
+    case 0x0f:
+        // FENCE (funct3=000) is an ordered, architecturally side-effect-free
+        // instruction in this execution model.  The model executes memory
+        // operations synchronously, so reaching this point already guarantees
+        // that every older access is complete before the next instruction is
+        // stepped.  FENCE.I (funct3=001) remains outside the model contract.
+        if (funct3 != 0x0) {
+            // Unsupported MISC-MEM encodings retain the project's existing
+            // inert-instruction behavior until an exception path exists.
+        }
+        break;
     case 0x33: {
         const uint32_t shamt = v2 & 0x1f;
         write_rd = true;

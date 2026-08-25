@@ -1,0 +1,160 @@
+name: UVM regression
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verilator-uvm-build:
+    name: Verilator/UVM build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    container:
+      image: verilator/verilator:v5.050
+    env:
+      UVM_HOME: ${{ github.workspace }}/.ci/uvm-core
+    steps:
+      - name: Check out core repository
+        uses: actions/checkout@v4
+
+      - name: Check out Accellera UVM 2020.3.1
+        uses: actions/checkout@v4
+        with:
+          repository: accellera-official/uvm-core
+          ref: 2020.3.1
+          path: .ci/uvm-core
+
+      - name: Report tool versions
+        run: |
+          verilator --version
+          g++ --version
+          make --version
+
+      - name: Elaborate and build the UVM testbench
+        run: make build
+
+      - name: Run cache, AXI, and differential smoke test
+        run: |
+          mkdir -p log
+          make run-only \
+            TEST=mem_image_test \
+            MEM_FILE=test_bench/programs/axi_smoke.mem \
+            TARGET_COMMITS=32 \
+            TIMEOUT_CYCLES=20000 \
+            SIM_TIMEOUT=50000 \
+            LOG=log/axi-smoke.log
+
+      - name: Enforce smoke-test acceptance markers
+        run: |
+          grep -Eq 'PROGRAM_SCORE.*PASS=[1-9][0-9]* FAIL=0 MISSING=0 EXTRA=0' log/axi-smoke.log
+          grep -Eq 'AXI_ACCEPTANCE.*status=PASS' log/axi-smoke.log
+          grep -Eq 'AXI_PROTOCOL_REPORT:.*procedural_errors=0' log/axi-smoke.log
+          if grep -Eq 'UVM_(ERROR|FATAL)[[:space:]]*:[[:space:]]*[1-9]' log/axi-smoke.log; then
+            echo 'UVM reported errors or fatals'
+            exit 1
+          fi
+
+      - name: Run deterministic RV32IM coverage program
+        run: |
+          make run-only \
+            TEST=mem_image_test \
+            MEM_FILE=test_bench/programs/rv32im_coverage.mem \
+            TARGET_COMMITS=67 \
+            REQUIRE_ISA_COVERAGE=1 \
+            TIMEOUT_CYCLES=30000 \
+            SIM_TIMEOUT=100000 \
+            LOG=log/rv32im-coverage.log
+          grep -Fq \
+            'ISA_COVERAGE status=PASS required=58 hit=58 missing=0 instr=46/46 branch=12/12' \
+            log/rv32im-coverage.log
+          grep -Eq \
+            'PROGRAM_SCORE.*PASS=[1-9][0-9]* FAIL=0 MISSING=0 EXTRA=0' \
+            log/rv32im-coverage.log
+
+  cache-uvm:
+    name: Active ICache/DCache UVM gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    container:
+      image: verilator/verilator:v5.050
+    defaults:
+      run:
+        shell: bash
+    env:
+      UVM_HOME: ${{ github.workspace }}/.ci/uvm-core
+    steps:
+      - name: Check out core repository
+        uses: actions/checkout@v4
+
+      - name: Check out Accellera UVM 2020.3.1
+        uses: actions/checkout@v4
+        with:
+          repository: accellera-official/uvm-core
+          ref: 2020.3.1
+          path: .ci/uvm-core
+
+      - name: Build and run active cache UVM gate
+        run: make cache-uvm-test
+
+  axi-uvm:
+    name: Active AXI directed and random gates
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    container:
+      image: verilator/verilator:v5.050
+    defaults:
+      run:
+        shell: bash
+    env:
+      UVM_HOME: ${{ github.workspace }}/.ci/uvm-core
+    steps:
+      - name: Check out core repository
+        uses: actions/checkout@v4
+
+      - name: Check out Accellera UVM 2020.3.1
+        uses: actions/checkout@v4
+        with:
+          repository: accellera-official/uvm-core
+          ref: 2020.3.1
+          path: .ci/uvm-core
+
+      - name: Build active AXI testbench
+        run: |
+          verilator --binary --timing -sv -Wall -Wno-fatal --assert -j 0 \
+            --top-module axi_master_uvm_tb --Mdir obj_dir_axi_uvm \
+            -I"$UVM_HOME/src" +incdir+"$UVM_HOME/src" \
+            "$UVM_HOME/src/uvm_pkg.sv" \
+            -f test_bench/axi/flist_axi_master_uvm.f \
+            +define+UVM_NO_DPI
+
+      - name: Run directed and reproducible random AXI tests
+        run: |
+          set -euo pipefail
+          mkdir -p log
+          ./obj_dir_axi_uvm/Vaxi_master_uvm_tb \
+            +UVM_TESTNAME=axi_master_test +verilator+seed+20260823 2>&1 | \
+            tee log/axi-active-uvm.log
+          grep -Eq \
+            'AXI_ACTIVE_UVM_TEST.*PASS transactions=19 checks=58 reads=13 writes=6' \
+            log/axi-active-uvm.log
+          for seed in 13579bdf 2468ace1; do
+            ./obj_dir_axi_uvm/Vaxi_master_uvm_tb \
+              +UVM_TESTNAME=axi_random_stress_test \
+              +AXI_RANDOM_SEED="$seed" 2>&1 | \
+              tee "log/axi-random-$seed.log"
+            grep -Fq \
+              "AXI_RANDOM_COVERAGE status=PASS seed=0x$seed txns=64 reads=32 writes=32" \
+              "log/axi-random-$seed.log"
+            grep -Eq 'AXI_RANDOM_UVM_TEST.*PASS' "log/axi-random-$seed.log"
+            grep -Eq \
+              'AXI_PROTOCOL_REPORT:.*procedural_errors=0.*pending_aw=0.*pending_w=0.*pending_b=0.*pending_r=0' \
+              "log/axi-random-$seed.log"
+          done
+          if grep -Eh 'UVM_(ERROR|FATAL)[[:space:]]*:[[:space:]]*[1-9]' \
+            log/axi-*.log; then
+            exit 1
+          fi

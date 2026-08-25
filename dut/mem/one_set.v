@@ -1,3 +1,5 @@
+`timescale 1ns/1ps
+
 module one_set #(
     parameter TAG_WIDTH     = 1,
     parameter OFFSET_WIDTH  = 4,

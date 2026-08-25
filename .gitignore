@@ -6,7 +6,8 @@
 *.json
 *.vcd
 *.mem
-!flist.f
+*.pyc
+!flist*.f
 
 !*/
 !*.v
@@ -16,8 +17,18 @@
 !*.c
 !*.h
 !*.cpp
+!*.py
+!*.md
+!*.yml
+!*.yaml
 !.gitignore
+!test_bench/programs/*.mem
 
 /obj_dir/
+**/obj_dir*/
+/coverage/
+/log/
+/C_model/cmodel_tests
+**/__pycache__/
 /UVM/obj_dir/
 /UVM/

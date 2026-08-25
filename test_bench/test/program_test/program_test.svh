@@ -34,7 +34,7 @@ class program_test extends program_base_test;
         end
 
         foreach (image.PM[word_addr]) begin
-            $root.test_bench.dut.u_mem.write_word(word_addr << 2, image.PM[word_addr]);
+            $root.test_bench.dut.write_word(word_addr << 2, image.PM[word_addr]);
             cmodel_mem_write32(word_addr << 2, image.PM[word_addr]);
         end
 

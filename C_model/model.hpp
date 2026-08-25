@@ -19,15 +19,21 @@ struct cmodel_retire_trace {
 
 class mycore {
     public:
-        mycore() : state_({0, {0}}), mem_() {};
+        mycore() : state_({0, {0}}), mem_(), imem_(), use_separate_imem_(false) {};
         void reset();
         void load_image();
         void load_image(const std::string& filename);
         void mem_write32(uint32_t addr, uint32_t data);
+        void imem_write32(uint32_t addr, uint32_t data);
         void set_pc(uint32_t pc);
         void set_reg(uint32_t idx, uint32_t value);
+        uint32_t get_reg(uint32_t idx) const;
+        uint8_t mem_peek8(uint32_t addr) const;
+        uint32_t mem_peek32(uint32_t addr) const;
         cmodel_retire_trace step();
     private:
         mycore_state state_;
         memory mem_;
+        memory imem_;
+        bool use_separate_imem_;
 };

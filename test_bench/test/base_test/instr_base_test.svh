@@ -85,8 +85,9 @@ class instr_base_test extends uvm_test;
                     if (probe_vif.reset) begin
                         retire_count = 0;
                     end
-                    else if (probe_vif.retire) begin
-                        retire_count++;
+                    else if (probe_vif.retire_valid != 2'b00) begin
+                        if (probe_vif.retire_valid[0]) retire_count++;
+                        if (probe_vif.retire_valid[1]) retire_count++;
                         if (retire_count >= target_commits) begin
                             reached_target = 1'b1;
                             break;

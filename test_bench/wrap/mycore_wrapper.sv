@@ -19,23 +19,30 @@ module mycore_wrapper (
     output  [31:0]  dm_req_wdata,
     input           dm_resp_wvalid,
 
-    output  [31:0]  probe_pc,
-    output  [31:0]  probe_regfile [0:31],
-    output          probe_retire,
-    output          probe_commit,
-    output  [4:0]   probe_rd_addr,
-    output  [31:0]  probe_rd_data,
-    output  [31:0]  probe_instr
+    output   [1:0]  probe_retire_valid,
+    output  [63:0]  probe_retire_pc,
+    output  [63:0]  probe_retire_instr,
+    output   [1:0]  probe_retire_rd_write,
+    output   [9:0]  probe_retire_rd_addr,
+    output  [63:0]  probe_retire_rd_data,
+    output          probe_bus_fault_valid,
+    output          probe_bus_fault_is_write,
+    output  [31:0]  probe_bus_fault_addr,
+    output   [1:0]  probe_bus_fault_resp,
+
+    axi_if           mon_axi
 );
 
     reg use_cache;
 
+    // These names intentionally remain stable for the existing passive
+    // core-interface monitors.  They are all explicit mycore_system ports;
+    // no pipeline or cache implementation hierarchy is sampled here.
     wire          core_pm_req_valid;
     wire [31:0]   core_pm_req_addr;
     wire          core_pm_req_ready;
     wire          core_pm_resp_valid;
     wire [31:0]   core_pm_resp_data;
-
     wire [31:0]   core_dm_req_addr;
     wire          core_dm_req_rvalid;
     wire          core_dm_req_rready;
@@ -47,32 +54,9 @@ module mycore_wrapper (
     wire [31:0]   core_dm_req_wdata;
     wire          core_dm_resp_wvalid;
 
-    mycore u_core (
-        .clk                (clk),
-        .reset              (reset),
-
-        .pm_req_valid_out   (core_pm_req_valid),
-        .pm_req_addr_out    (core_pm_req_addr),
-        .pm_req_ready_in    (core_pm_req_ready),
-        .pm_resp_valid_in   (core_pm_resp_valid),
-        .pm_resp_data_in    (core_pm_resp_data),
-
-        .dm_req_addr_out    (core_dm_req_addr),
-
-        .dm_req_rvalid_out  (core_dm_req_rvalid),
-        .dm_req_rready_in   (core_dm_req_rready),
-        .dm_resp_rvalid_in  (core_dm_resp_rvalid),
-        .dm_resp_rdata_in   (core_dm_resp_rdata),
-
-        .dm_req_wvalid_out  (core_dm_req_wvalid),
-        .dm_req_wready_in   (core_dm_req_wready),
-        .dm_req_wstrb_out   (core_dm_req_wstrb),
-        .dm_req_wdata_out   (core_dm_req_wdata),
-        .dm_resp_wvalid_in  (core_dm_resp_wvalid)
-    );
-
-    string uvm_testname;
     initial begin
+        string uvm_testname;
+        use_cache = 1'b0;
         if (!$value$plusargs("UVM_TESTNAME=%s", uvm_testname)) begin
             uvm_testname = "";
         end
@@ -80,156 +64,114 @@ module mycore_wrapper (
                     (uvm_testname == "mem_image_test");
     end
 
-    wire          ic_req_rvalid;
-    wire          ic_req_rready;
-    wire [31:0]   ic_req_raddr;
-    wire          ic_resp_rvalid;
-    wire [127:0]  ic_resp_rdata;
-
-    wire          dc_req_rvalid;
-    wire          dc_req_rready;
-    wire [31:0]   dc_req_raddr;
-    wire          dc_resp_rvalid;
-    wire [127:0]  dc_resp_rdata;
-    wire          dc_req_wvalid;
-    wire          dc_req_wready;
-    wire [31:0]   dc_req_waddr;
-    wire [127:0]  dc_req_wdata;
-    wire          dc_resp_wvalid;
-
     assign pm_req_valid = core_pm_req_valid;
-    assign pm_req_addr  = core_pm_req_addr;
-
-    assign dm_req_addr   = core_dm_req_addr;
+    assign pm_req_addr = core_pm_req_addr;
+    assign dm_req_addr = core_dm_req_addr;
     assign dm_req_rvalid = core_dm_req_rvalid;
     assign dm_req_wvalid = core_dm_req_wvalid;
-    assign dm_req_wstrb  = core_dm_req_wstrb;
-    assign dm_req_wdata  = core_dm_req_wdata;
+    assign dm_req_wstrb = core_dm_req_wstrb;
+    assign dm_req_wdata = core_dm_req_wdata;
 
-    assign core_pm_req_ready   = use_cache ? cache_pm_req_ready   : pm_req_ready;
-    assign core_pm_resp_valid  = use_cache ? cache_pm_resp_valid  : pm_resp_valid;
-    assign core_pm_resp_data   = use_cache ? cache_pm_resp_data   : pm_resp_data;
-
-    assign core_dm_req_rready  = use_cache ? cache_dm_req_rready  : dm_req_rready;
-    assign core_dm_resp_rvalid = use_cache ? cache_dm_resp_rvalid : dm_resp_rvalid;
-    assign core_dm_resp_rdata  = use_cache ? cache_dm_resp_rdata  : dm_resp_rdata;
-    assign core_dm_req_wready  = use_cache ? cache_dm_req_wready  : dm_req_wready;
-    assign core_dm_resp_wvalid = use_cache ? cache_dm_resp_wvalid : dm_resp_wvalid;
-
-    wire          cache_pm_req_ready;
-    wire          cache_pm_resp_valid;
-    wire [31:0]   cache_pm_resp_data;
-    wire          cache_dm_req_rready;
-    wire          cache_dm_resp_rvalid;
-    wire [31:0]   cache_dm_resp_rdata;
-    wire          cache_dm_req_wready;
-    wire          cache_dm_resp_wvalid;
-
-    Icache u_icache (
-        .clk                (clk),
-        .reset              (reset),
-
-        .pm_req_valid_in    (core_pm_req_valid),
-        .pm_req_addr_in     (core_pm_req_addr),
-        .pm_req_ready_out   (cache_pm_req_ready),
-        .pm_resp_valid_out  (cache_pm_resp_valid),
-        .pm_resp_data_out   (cache_pm_resp_data),
-
-        .ic_req_rvalid      (ic_req_rvalid),
-        .ic_req_rready      (ic_req_rready),
-        .ic_req_raddr       (ic_req_raddr),
-        .ic_resp_rvalid     (ic_resp_rvalid),
-        .ic_resp_rdata      (ic_resp_rdata)
+    mycore_system u_system (
+        .clk                    (clk),
+        .reset                  (reset),
+        .use_cache              (use_cache),
+        .pm_req_valid_out       (core_pm_req_valid),
+        .pm_req_addr_out        (core_pm_req_addr),
+        .pm_req_ready_in        (pm_req_ready),
+        .pm_resp_valid_in       (pm_resp_valid),
+        .pm_resp_data_in        (pm_resp_data),
+        .dm_req_addr_out        (core_dm_req_addr),
+        .dm_req_rvalid_out      (core_dm_req_rvalid),
+        .dm_req_rready_in       (dm_req_rready),
+        .dm_resp_rvalid_in      (dm_resp_rvalid),
+        .dm_resp_rdata_in       (dm_resp_rdata),
+        .dm_req_wvalid_out      (core_dm_req_wvalid),
+        .dm_req_wready_in       (dm_req_wready),
+        .dm_req_wstrb_out       (core_dm_req_wstrb),
+        .dm_req_wdata_out       (core_dm_req_wdata),
+        .dm_resp_wvalid_in      (dm_resp_wvalid),
+        .retire_valid_out       (probe_retire_valid),
+        .retire_pc_out          (probe_retire_pc),
+        .retire_instr_out       (probe_retire_instr),
+        .retire_rd_write_out    (probe_retire_rd_write),
+        .retire_rd_addr_out     (probe_retire_rd_addr),
+        .retire_rd_data_out     (probe_retire_rd_data),
+        .bus_fault_valid_out    (probe_bus_fault_valid),
+        .bus_fault_is_write_out (probe_bus_fault_is_write),
+        .bus_fault_addr_out     (probe_bus_fault_addr),
+        .bus_fault_resp_out     (probe_bus_fault_resp),
+        .mon_core_pm_req_ready  (core_pm_req_ready),
+        .mon_core_pm_resp_valid (core_pm_resp_valid),
+        .mon_core_pm_resp_data  (core_pm_resp_data),
+        .mon_core_dm_req_rready (core_dm_req_rready),
+        .mon_core_dm_resp_rvalid(core_dm_resp_rvalid),
+        .mon_core_dm_resp_rdata (core_dm_resp_rdata),
+        .mon_core_dm_req_wready (core_dm_req_wready),
+        .mon_core_dm_resp_wvalid(core_dm_resp_wvalid),
+        .mon_axi_awid           (mon_axi.awid),
+        .mon_axi_awaddr         (mon_axi.awaddr),
+        .mon_axi_awlen          (mon_axi.awlen),
+        .mon_axi_awsize         (mon_axi.awsize),
+        .mon_axi_awburst        (mon_axi.awburst),
+        .mon_axi_awlock         (mon_axi.awlock),
+        .mon_axi_awcache        (mon_axi.awcache),
+        .mon_axi_awprot         (mon_axi.awprot),
+        .mon_axi_awqos          (mon_axi.awqos),
+        .mon_axi_awvalid        (mon_axi.awvalid),
+        .mon_axi_awready        (mon_axi.awready),
+        .mon_axi_wdata          (mon_axi.wdata),
+        .mon_axi_wstrb          (mon_axi.wstrb),
+        .mon_axi_wlast          (mon_axi.wlast),
+        .mon_axi_wvalid         (mon_axi.wvalid),
+        .mon_axi_wready         (mon_axi.wready),
+        .mon_axi_bid            (mon_axi.bid),
+        .mon_axi_bresp          (mon_axi.bresp),
+        .mon_axi_bvalid         (mon_axi.bvalid),
+        .mon_axi_bready         (mon_axi.bready),
+        .mon_axi_arid           (mon_axi.arid),
+        .mon_axi_araddr         (mon_axi.araddr),
+        .mon_axi_arlen          (mon_axi.arlen),
+        .mon_axi_arsize         (mon_axi.arsize),
+        .mon_axi_arburst        (mon_axi.arburst),
+        .mon_axi_arlock         (mon_axi.arlock),
+        .mon_axi_arcache        (mon_axi.arcache),
+        .mon_axi_arprot         (mon_axi.arprot),
+        .mon_axi_arqos          (mon_axi.arqos),
+        .mon_axi_arvalid        (mon_axi.arvalid),
+        .mon_axi_arready        (mon_axi.arready),
+        .mon_axi_rid            (mon_axi.rid),
+        .mon_axi_rdata          (mon_axi.rdata),
+        .mon_axi_rresp          (mon_axi.rresp),
+        .mon_axi_rlast          (mon_axi.rlast),
+        .mon_axi_rvalid         (mon_axi.rvalid),
+        .mon_axi_rready         (mon_axi.rready)
     );
 
-    Dcache u_dcache (
-        .clk                (clk),
-        .reset                (reset),
+    // AXI fields unused by the current DUT subset are completed in the
+    // verification adapter so monitors always see a fully-defined interface.
+    assign mon_axi.awregion = 4'b0;
+    assign mon_axi.awuser = '0;
+    assign mon_axi.aw_owner = 1'b1;
+    assign mon_axi.wuser = '0;
+    assign mon_axi.buser = '0;
+    assign mon_axi.arregion = 4'b0;
+    assign mon_axi.aruser = '0;
+    assign mon_axi.ar_owner = (mon_axi.arid == 2'd1) ? 1'b1 : 1'b0;
+    assign mon_axi.ruser = '0;
 
-        .dm_req_addr_in     (core_dm_req_addr),
-        .dm_req_rvalid_in   (core_dm_req_rvalid),
-        .dm_req_rready_in   (cache_dm_req_rready),
-        .dm_resp_rvalid_out (cache_dm_resp_rvalid),
-        .dm_resp_rdata_out  (cache_dm_resp_rdata),
-        .dm_req_wvalid_in   (core_dm_req_wvalid),
-        .dm_req_wready_out  (cache_dm_req_wready),
-        .dm_req_wstrb_in    (core_dm_req_wstrb),
-        .dm_req_wdata_in    (core_dm_req_wdata),
-        .dm_resp_wready_out (cache_dm_resp_wvalid),
-
-        .dc_req_rvalid      (dc_req_rvalid),
-        .dc_req_rready      (dc_req_rready),
-        .dc_req_raddr       (dc_req_raddr),
-        .dc_resp_rvalid     (dc_resp_rvalid),
-        .dc_resp_rdata      (dc_resp_rdata),
-        .dc_req_wvalid      (dc_req_wvalid),
-        .dc_req_wready      (dc_req_wready),
-        .dc_req_waddr       (dc_req_waddr),
-        .dc_req_wdata       (dc_req_wdata),
-        .dc_resp_wvalid     (dc_resp_wvalid)
+    task automatic write_word(
+        input logic [31:0] address,
+        input logic [31:0] data
     );
+        u_system.write_word(address, data);
+    endtask
 
-    MEM u_mem (
-        .clk                (clk),
-        .reset              (reset),
-
-        .ic_req_rvalid      (ic_req_rvalid),
-        .ic_req_rready      (ic_req_rready),
-        .ic_req_raddr       (ic_req_raddr),
-        .ic_resp_rvalid     (ic_resp_rvalid),
-        .ic_resp_rdata      (ic_resp_rdata),
-
-        .dc_req_rvalid      (dc_req_rvalid),
-        .dc_req_rready      (dc_req_rready),
-        .dc_req_raddr       (dc_req_raddr),
-        .dc_resp_rvalid     (dc_resp_rvalid),
-        .dc_resp_rdata      (dc_resp_rdata),
-
-        .dc_req_wvalid      (dc_req_wvalid),
-        .dc_req_wready      (dc_req_wready),
-        .dc_req_waddr       (dc_req_waddr),
-        .dc_req_wdata       (dc_req_wdata),
-        .dc_resp_wvalid     (dc_resp_wvalid)
+    task automatic write_arch_reg(
+        input logic [4:0] address,
+        input logic [31:0] data
     );
-
-    genvar i;
-    generate
-        for (i = 0; i < 32; i = i + 1) begin : gen_probe_reg
-            assign probe_regfile[i] = u_core.regfile.reg_val[i];
-        end
-    endgenerate
-
-    reg        probe_commit_r;
-    reg [4:0]  probe_rd_addr_r;
-    reg [31:0] probe_rd_data_r;
-    reg        probe_retire_r;
-    reg [31:0] probe_pc_r;
-    reg [31:0] probe_instr_r;
-
-    always @(posedge clk or posedge reset) begin
-        if (reset) begin
-            probe_commit_r  <= 1'b0;
-            probe_rd_addr_r <= 5'b0;
-            probe_rd_data_r <= 32'b0;
-            probe_retire_r <= 1'b0;
-            probe_pc_r <= 32'b0;
-            probe_instr_r <= 32'b0;
-        end
-        else begin
-            probe_commit_r  <= u_core.commit_valid;
-            probe_rd_addr_r <= u_core.rd_addr_wb;
-            probe_rd_data_r <= u_core.w1_in_wb;
-            probe_retire_r  <= u_core.retire_valid;
-            probe_pc_r      <= u_core.PC_mem_wb;
-            probe_instr_r   <= u_core.instr_mem_wb;
-        end
-    end
-
-    assign probe_commit = probe_commit_r;
-    assign probe_rd_addr = probe_rd_addr_r;
-    assign probe_rd_data = probe_rd_data_r;
-    assign probe_retire = probe_retire_r;
-    assign probe_pc = probe_pc_r;
-    assign probe_instr = probe_instr_r;
+        u_system.write_arch_reg(address, data);
+    endtask
 
 endmodule

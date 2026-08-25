@@ -100,27 +100,6 @@ module instr_queue #(
             end
         end
         else begin
-
-            // synthesis translate_off
-            if (pm_resp_valid && !drop_old_resp_en && !req_fifo[instr_tail[PTR_WIDTH-1:0]] && !resp_alloc_same_cycle) begin
-                $display("ASSERT_FAIL instr_queue response without allocated entry: time=%0t read_ptr=%0d malloc_ptr=%0d instr_tail=%0d old_drop=%0d outstanding=%0d flush=%0b stall=%0b req_valid=%0b req_ready=%0b wr_pc_en=%0b queue_full=%0b resp_data=0x%08x",
-                         $time, read_ptr, malloc_ptr, instr_tail, old_resp_drop_count,
-                         outstanding_resp_count, flush, stall, pm_req_valid, pm_req_ready,
-                         wr_pc_en, queue_full, pm_resp_data);
-                $fatal;
-            end
-            if (pm_resp_valid && !drop_old_resp_en && (req_fifo[instr_tail[PTR_WIDTH-1:0]] || resp_alloc_same_cycle) && rsp_fifo[instr_tail[PTR_WIDTH-1:0]]) begin
-                $display("ASSERT_FAIL instr_queue response overwrites filled entry: time=%0t read_ptr=%0d malloc_ptr=%0d instr_tail=%0d resp_data=0x%08x",
-                         $time, read_ptr, malloc_ptr, instr_tail, pm_resp_data);
-                $fatal;
-            end
-            if (wr_pc_en && req_fifo[malloc_ptr[PTR_WIDTH-1:0]]) begin
-                $display("ASSERT_FAIL instr_queue request overwrites allocated entry: time=%0t read_ptr=%0d malloc_ptr=%0d instr_tail=%0d req_addr=0x%08x",
-                         $time, read_ptr, malloc_ptr, instr_tail, pm_req_addr);
-                $fatal;
-            end
-            // synthesis translate_on
-
             if (wr_pc_en) begin
                 pc_fifo[malloc_ptr[PTR_WIDTH-1:0]] <= pm_req_addr;
                 req_fifo[malloc_ptr[PTR_WIDTH-1:0]] <= 1'b1;

@@ -6,6 +6,20 @@ module test_bench;
     import uvm_pkg::*;
     import mycore_pkg::*;
 
+    localparam int unsigned AXI_ADDR_WIDTH  = 32;
+    localparam int unsigned AXI_DATA_WIDTH  = 32;
+    localparam int unsigned AXI_ID_WIDTH    = 2;
+    localparam int unsigned AXI_USER_WIDTH  = 1;
+    localparam int unsigned AXI_OWNER_WIDTH = 1;
+
+    typedef virtual axi_if #(
+        AXI_ADDR_WIDTH,
+        AXI_DATA_WIDTH,
+        AXI_ID_WIDTH,
+        AXI_USER_WIDTH,
+        AXI_OWNER_WIDTH
+    ) shared_axi_vif_t;
+
     bit clk;
     int unsigned reg_init_seed;
     int unsigned sim_timeout_cycles;
@@ -25,6 +39,16 @@ module test_bench;
     icache_if icache_if_inst(.clk(clk));
     dcache_if dcache_if_inst(.clk(clk));
     probe_if  probe_if_inst (.clk(clk));
+    axi_if #(
+        AXI_ADDR_WIDTH,
+        AXI_DATA_WIDTH,
+        AXI_ID_WIDTH,
+        AXI_USER_WIDTH,
+        AXI_OWNER_WIDTH
+    ) shared_axi_if_inst (
+        .aclk    (clk),
+        .aresetn (~icache_if_inst.reset)
+    );
 
     mycore_wrapper dut (
         .clk            (clk),
@@ -47,14 +71,34 @@ module test_bench;
         .dm_req_wdata   (dcache_if_inst.req_wdata),
         .dm_resp_wvalid (dcache_if_inst.resp_wvalid),
 
-        .probe_pc       (probe_if_inst.pc),
-        .probe_regfile  (probe_if_inst.regfile_value),
-        .probe_retire    (probe_if_inst.retire),
-        .probe_commit   (probe_if_inst.commit),
-        .probe_rd_addr  (probe_if_inst.rd_addr),
-        .probe_rd_data  (probe_if_inst.rd_data),
-        .probe_instr    (probe_if_inst.instr)
+        .probe_retire_valid       (probe_if_inst.retire_valid),
+        .probe_retire_pc          (probe_if_inst.retire_pc),
+        .probe_retire_instr       (probe_if_inst.retire_instr),
+        .probe_retire_rd_write    (probe_if_inst.retire_rd_write),
+        .probe_retire_rd_addr     (probe_if_inst.retire_rd_addr),
+        .probe_retire_rd_data     (probe_if_inst.retire_rd_data),
+        .probe_bus_fault_valid    (probe_if_inst.bus_fault_valid),
+        .probe_bus_fault_is_write (probe_if_inst.bus_fault_is_write),
+        .probe_bus_fault_addr     (probe_if_inst.bus_fault_addr),
+        .probe_bus_fault_resp     (probe_if_inst.bus_fault_resp),
+        .mon_axi                  (shared_axi_if_inst)
     );
+
+    axi_protocol_checker #(
+        .CHECK_FINAL_QUIESCENCE (1'b0)
+    ) shared_axi_protocol_checker (
+        .axi (shared_axi_if_inst)
+    );
+
+    always @(posedge clk) begin
+        if (!probe_if_inst.reset && probe_if_inst.bus_fault_valid) begin
+            $fatal(1,
+                   "BUS_FAULT: %s address=0x%08x AXI_RESP=0x%0x",
+                   probe_if_inst.bus_fault_is_write ? "write" : "read",
+                   probe_if_inst.bus_fault_addr,
+                   probe_if_inst.bus_fault_resp);
+        end
+    end
 
     function automatic logic [31:0] make_init_reg_value(
         input int unsigned index,
@@ -77,7 +121,7 @@ module test_bench;
             probe_if_inst.reg_init_done = 1'b0;
             for (idx = 0; idx < 32; idx = idx + 1) begin
                 value = (idx == 0) ? 32'b0 : make_init_reg_value(idx, reg_init_seed);
-                dut.u_core.regfile.reg_val[idx] = value;
+                dut.write_arch_reg(idx[4:0], value);
                 probe_if_inst.init_reg_value[idx] = value;
             end
             probe_if_inst.reg_init_done = 1'b1;
@@ -106,6 +150,8 @@ module test_bench;
         uvm_config_db#(virtual icache_if)::set(null, "*", "vif", icache_if_inst);
         uvm_config_db#(virtual dcache_if)::set(null, "*", "vif", dcache_if_inst);
         uvm_config_db#(virtual probe_if) ::set(null, "*", "probe", probe_if_inst);
+        uvm_config_db#(shared_axi_vif_t)::set(
+            null, "*", "vif", shared_axi_if_inst);
 
         if (!$value$plusargs("UVM_TESTNAME=%s", testname)) begin
             testname = "program_test";

@@ -16,6 +16,7 @@ module reg_R
 );
 
   reg [31:0] reg_val[0:31];
+  integer i;
 
   assign r1_out = (r1_addr == 0) ? 0 :
                 (w1_en && w1_addr == r1_addr) ? w1_in : reg_val[r1_addr];
@@ -24,8 +25,7 @@ module reg_R
 
   always @( posedge clk or posedge reset) begin // Write
     if (reset) begin
-      integer i;
-      for(i=1;i<32;i++) begin
+      for(i=1;i<32;i=i+1) begin
         reg_val[i] <= 32'b0;
       end
     end

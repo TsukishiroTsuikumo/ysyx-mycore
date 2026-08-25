@@ -65,15 +65,19 @@ class program_scoreboard extends mycore_scoreboard;
 
     function void merge_dmem_trace();
         int unsigned idx = 0;
+        bit [6:0] opcode;
         for(int unsigned i = 0; i < act_q.size(); i++) begin
-            if (idx < act_dmem_q.size()) begin
-                if(act_q[i].pc == act_dmem_q[idx].pc && act_q[i].instr == act_dmem_q[idx].instr) begin
+            opcode = act_q[i].instr[6:0];
+            if ((opcode == 7'b0000011) || (opcode == 7'b0100011)) begin
+                if (idx < act_dmem_q.size()) begin
+                    // Associate scalar memory transactions with ordered
+                    // load/store retirement. The monitor therefore needs no
+                    // implementation-specific pipeline hierarchy.
                     act_q[i].dmem_trace = act_dmem_q[idx];
+                    act_q[i].dmem_trace.pc = act_q[i].pc;
+                    act_q[i].dmem_trace.instr = act_q[i].instr;
                     idx++;
                 end
-            end
-            else begin
-                break;
             end
         end
     endfunction

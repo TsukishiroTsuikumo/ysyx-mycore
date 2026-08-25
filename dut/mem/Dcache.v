@@ -1,3 +1,5 @@
+`timescale 1ns/1ps
+
 module Dcache #(
     parameter DM_LINE_BYTES = 16,
     parameter DM_WAY_NUM    = 4,
@@ -28,6 +30,7 @@ module Dcache #(
 
     input                           dc_resp_rvalid,
     input       [DM_LINE_WIDTH-1:0] dc_resp_rdata,
+    input                     [1:0] dc_resp_rresp,
 
     // MEM line writeback interface
     output  reg                     dc_req_wvalid,
@@ -35,7 +38,13 @@ module Dcache #(
     output  reg              [31:0] dc_req_waddr,
     output  reg [DM_LINE_WIDTH-1:0] dc_req_wdata,
 
-    input                           dc_resp_wvalid
+    input                           dc_resp_wvalid,
+    input                     [1:0] dc_resp_wresp,
+
+    output reg                      dc_fault_valid,
+    output reg                      dc_fault_is_write,
+    output reg               [31:0] dc_fault_addr,
+    output reg                [1:0] dc_fault_resp
 );
 
     function integer clog2(input integer value);
@@ -124,6 +133,8 @@ module Dcache #(
     wire selected_wr_fire;
     wire selected_miss;
     wire selected_miss_need_wb;
+    wire dc_read_error = (dc_resp_rresp != 2'b00);
+    wire dc_write_error = (dc_resp_wresp != 2'b00);
 
     reg [DM_LINE_BYTES-1:0] cpu_wstrb_line;
     reg [DM_LINE_WIDTH-1:0] cpu_wdata_line;
@@ -131,6 +142,7 @@ module Dcache #(
 
     integer byte_idx;
     integer line_byte_idx;
+    integer merge_byte_idx;
 
     // Block new CPU requests during cross-line processing
     assign dm_req_wready_out = (current_state == IDLE) && !cross_active;
@@ -210,10 +222,12 @@ module Dcache #(
             assign set_wr_req[set_idx] =
                 (current_state == IDLE && cpu_write_fire && req_index_now == SET_INDEX) ||
                 (current_state == BUSY && refill_done_q && req_is_write_q && req_index_q == SET_INDEX) ||
-                (current_state == RDMEM && dc_resp_rvalid && req_index_q == SET_INDEX);
+                (current_state == RDMEM && dc_resp_rvalid && !dc_read_error &&
+                 req_index_q == SET_INDEX);
 
             assign set_wr_refill[set_idx] =
-                (current_state == RDMEM && dc_resp_rvalid && req_index_q == SET_INDEX);
+                (current_state == RDMEM && dc_resp_rvalid && !dc_read_error &&
+                 req_index_q == SET_INDEX);
 
             one_set #(
                 .TAG_WIDTH(TAG_WIDTH),
@@ -293,7 +307,7 @@ module Dcache #(
 
             WRMEM: begin
                 if (dc_resp_wvalid) begin
-                    next_state = RDMEM;
+                    next_state = dc_write_error ? IDLE : RDMEM;
                 end
                 else begin
                     next_state = WRMEM;
@@ -302,7 +316,7 @@ module Dcache #(
 
             RDMEM: begin
                 if (dc_resp_rvalid) begin
-                    next_state = BUSY;
+                    next_state = dc_read_error ? IDLE : BUSY;
                 end
                 else begin
                     next_state = RDMEM;
@@ -357,14 +371,17 @@ module Dcache #(
                     end
                     else if (cross_phase) begin
                         // Phase 1 complete: merge line1 + line2 data
-                        integer b;
                         dm_resp_rvalid_out = 1'b1;
-                        for (b = 0; b < 4; b = b + 1) begin
-                            if (cross_offset + b < DM_LINE_BYTES)
-                                dm_resp_rdata_out[b*8 +: 8] = cross_line_data[b*8 +: 8];
+                        for (merge_byte_idx = 0; merge_byte_idx < 4;
+                             merge_byte_idx = merge_byte_idx + 1) begin
+                            if (cross_offset + merge_byte_idx < DM_LINE_BYTES)
+                                dm_resp_rdata_out[merge_byte_idx*8 +: 8] =
+                                    cross_line_data[merge_byte_idx*8 +: 8];
                             else
-                                dm_resp_rdata_out[b*8 +: 8] =
-                                    selected_read_word[(cross_offset + b - DM_LINE_BYTES)*8 +: 8];
+                                dm_resp_rdata_out[merge_byte_idx*8 +: 8] =
+                                    selected_read_word[
+                                        (cross_offset + merge_byte_idx -
+                                         DM_LINE_BYTES)*8 +: 8];
                         end
                     end
                 end
@@ -376,19 +393,37 @@ module Dcache #(
                 end
                 dc_req_waddr = wb_addr_q;
                 dc_req_wdata = wb_data_q;
+                if (dc_resp_wvalid && dc_write_error) begin
+                    if (req_is_write_q) begin
+                        dm_resp_wready_out = 1'b1;
+                    end
+                    else begin
+                        dm_resp_rvalid_out = 1'b1;
+                        dm_resp_rdata_out = 32'b0;
+                    end
+                end
             end
 
             RDMEM: begin
                 if (!mem_req_sent) begin
                     dc_req_rvalid = 1'b1;
                 end
+                if (dc_resp_rvalid && dc_read_error) begin
+                    if (req_is_write_q) begin
+                        dm_resp_wready_out = 1'b1;
+                    end
+                    else begin
+                        dm_resp_rvalid_out = 1'b1;
+                        dm_resp_rdata_out = 32'b0;
+                    end
+                end
             end
 
             CROSSLINE: begin
-                // CROSSLINE acts like IDLE for the line2 address
-                if (selected_miss_need_wb && !mem_req_sent) begin
-                    // Capture writeback data for line2
-                end
+                // Preserve the second-line address selected by the common
+                // defaults above.  Keep this case non-empty: coverage-enabled
+                // Coverage FSM detection rejects an empty optimized branch.
+                dc_req_raddr = line2_addr;
             end
 
             default: begin
@@ -416,8 +451,13 @@ module Dcache #(
             cross_phase <= 1'b0;
             cross_line_data <= 32'b0;
             cross_offset <= 4'd0;
+            dc_fault_valid <= 1'b0;
+            dc_fault_is_write <= 1'b0;
+            dc_fault_addr <= 32'b0;
+            dc_fault_resp <= 2'b00;
         end
         else begin
+            dc_fault_valid <= 1'b0;
             // --- cross-line: BUSY phase0 → CROSSLINE transition ---
             if (current_state == BUSY && cross_active && !cross_phase &&
                 !req_is_write_q && selected_rd_fire) begin
@@ -481,6 +521,15 @@ module Dcache #(
             end
             else if (current_state == WRMEM && dc_resp_wvalid) begin
                 mem_req_sent <= 1'b0;
+                if (dc_write_error) begin
+                    refill_done_q <= 1'b0;
+                    cross_active <= 1'b0;
+                    cross_phase <= 1'b0;
+                    dc_fault_valid <= 1'b1;
+                    dc_fault_is_write <= 1'b1;
+                    dc_fault_addr <= wb_addr_q;
+                    dc_fault_resp <= dc_resp_wresp;
+                end
             end
             // --- RDMEM ---
             else if (current_state == RDMEM && dc_req_rvalid && dc_req_rready) begin
@@ -488,7 +537,15 @@ module Dcache #(
             end
             else if (current_state == RDMEM && dc_resp_rvalid) begin
                 mem_req_sent <= 1'b0;
-                refill_done_q <= 1'b1;
+                refill_done_q <= !dc_read_error;
+                if (dc_read_error) begin
+                    cross_active <= 1'b0;
+                    cross_phase <= 1'b0;
+                    dc_fault_valid <= 1'b1;
+                    dc_fault_is_write <= 1'b0;
+                    dc_fault_addr <= dc_req_raddr;
+                    dc_fault_resp <= dc_resp_rresp;
+                end
             end
             // --- BUSY complete (non-cross) ---
             else if (current_state == BUSY &&

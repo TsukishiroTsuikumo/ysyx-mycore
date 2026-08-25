@@ -39,12 +39,28 @@ extern "C" void cmodel_mem_write32(uint32_t addr, uint32_t data) {
     g_core.mem_write32(addr, data);
 }
 
+extern "C" void cmodel_imem_write32(uint32_t addr, uint32_t data) {
+    g_core.imem_write32(addr, data);
+}
+
 extern "C" void cmodel_set_pc(uint32_t pc) {
     g_core.set_pc(pc);
 }
 
 extern "C" void cmodel_set_reg(uint32_t idx, uint32_t value) {
     g_core.set_reg(idx, value);
+}
+
+extern "C" uint32_t cmodel_get_reg(uint32_t idx) {
+    return g_core.get_reg(idx);
+}
+
+extern "C" uint32_t cmodel_mem_peek8(uint32_t addr) {
+    return g_core.mem_peek8(addr);
+}
+
+extern "C" uint32_t cmodel_mem_peek32(uint32_t addr) {
+    return g_core.mem_peek32(addr);
 }
 
 extern "C" int cmodel_step(

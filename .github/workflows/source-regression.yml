@@ -1,0 +1,57 @@
+name: Source-program differential regression
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-program-regression:
+    name: Compile and differentially execute csrc programs
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    container:
+      image: verilator/verilator:v5.050
+    defaults:
+      run:
+        shell: bash
+    env:
+      UVM_HOME: ${{ github.workspace }}/.ci/uvm-core
+    steps:
+      - name: Check out core repository
+        uses: actions/checkout@v4
+
+      - name: Check out Accellera UVM 2020.3.1
+        uses: actions/checkout@v4
+        with:
+          repository: accellera-official/uvm-core
+          ref: 2020.3.1
+          path: .ci/uvm-core
+
+      - name: Install RV32IM cross toolchain
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            --no-install-recommends gcc-riscv64-unknown-elf \
+            binutils-riscv64-unknown-elf xxd
+
+      - name: Build and run source-program regression
+        run: |
+          set -o pipefail
+          mkdir -p ci-artifacts
+          make regression 2>&1 | tee ci-artifacts/source-regression.log
+          grep -Fq 'Passed: 5  Failed: 0' ci-artifacts/source-regression.log
+
+      - name: Upload regression evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: source-program-regression
+          path: |
+            ci-artifacts/source-regression.log
+            log/*.log
+            csrc/image/*_image.mem
+          if-no-files-found: error
