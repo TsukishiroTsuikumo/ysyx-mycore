@@ -6,9 +6,15 @@ dut/mycore/mycore.v
 dut/mycore/reg/reg_PC.v
 dut/mycore/reg/reg_R.v
 dut/mycore/reg/instr_queue.v
+dut/mycore/reg/rat.v
+dut/mycore/reg/rob.v
+dut/mycore/reg/reservation_station.v
+dut/mycore/reg/lsq.v
 dut/mycore/controller/decoder.v
 dut/mycore/controller/controller.v
 dut/mycore/controller/hazard.v
+dut/mycore/controller/muldiv_tracker.v
+dut/mycore/controller/cdb_arbiter.v
 dut/mycore/fu/shifter.v
 dut/mycore/fu/multiplier.v
 dut/mycore/fu/alu.v
@@ -16,6 +22,7 @@ dut/mycore/fu/lsu.v
 dut/mycore/fu/adder.v
 dut/mycore/fu/divider.v
 dut/mycore/fu/imu.v
+dut/mycore/fu/load_extender.v
 
 dut/mem/one_set.v
 dut/mem/Icache.v

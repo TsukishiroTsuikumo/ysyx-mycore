@@ -1,115 +1,82 @@
 `timescale 1ns/1ps
 
+// Structural dispatch and global issue interlock for the bounded OoO core.
+// Data dependencies are represented by RAT tags and are woken in the RS;
+// this block therefore replaces the old pipeline-register RAW comparison
+// with prefix admission against the current ROB/PRF/RS/LSQ capacities.
 module hazard (
-    input             backend_ready,
-    input             kill_issue,
-    input             slot0_valid,
-    input             slot1_valid,
-    input       [2:0] slot0_class,
-    input       [2:0] slot1_class,
-    input             slot0_rs1_used,
-    input             slot0_rs2_used,
-    input             slot1_rs1_used,
-    input             slot1_rs2_used,
-    input       [4:0] slot0_rs1_addr,
-    input       [4:0] slot0_rs2_addr,
-    input       [4:0] slot1_rs1_addr,
-    input       [4:0] slot1_rs2_addr,
-    input             slot0_writes_rd,
-    input             slot1_writes_rd,
-    input       [4:0] slot0_rd_addr,
-    input       [4:0] slot1_rd_addr,
-    input             id_ex_valid0,
-    input             id_ex_valid1,
-    input             id_ex_writes_rd0,
-    input             id_ex_writes_rd1,
-    input       [4:0] id_ex_rd_addr0,
-    input       [4:0] id_ex_rd_addr1,
-    input             ex_mem_valid0,
-    input             ex_mem_valid1,
-    input             ex_mem_writes_rd0,
-    input             ex_mem_writes_rd1,
-    input       [4:0] ex_mem_rd_addr0,
-    input       [4:0] ex_mem_rd_addr1,
-    output reg  [1:0] issue_valid,
-    output reg  [1:0] consume_count,
-    output            slot0_old_raw,
-    output            slot1_old_raw,
-    output            intra_pair_raw,
-    output            structural_pair_block,
-    output            data_hazard_stall,
-    output            pair_serialize
+    input      [1:0] fetch_valid_in,
+    input            recovery_in,
+
+    input      [3:0] rob_free_count_in,
+    input      [5:0] prf_free_count_in,
+    input      [3:0] rs_free_count_in,
+    input      [3:0] lsq_free_count_in,
+
+    input      [1:0] phys_need_in,
+    input      [1:0] rs_need_in,
+    input      [1:0] lsq_need_in,
+    input      [1:0] is_control_in,
+    input      [1:0] is_fence_in,
+    input            any_control_inflight_in,
+    input            any_fence_inflight_in,
+
+    input            rob_head_is_fence_in,
+    input            memory_idle_in,
+
+    output reg [1:0] dispatch_count_out,
+    output     [1:0] dispatch_valid_out,
+    output           issue_enable_out,
+    output           fence_complete_out
 );
 
-    localparam [2:0] CLASS_SIMPLE_INT = 3'd0;
+    wire [1:0] total_phys_need;
+    wire [1:0] total_rs_need;
+    wire [1:0] total_lsq_need;
+    wire       slot0_can_dispatch;
+    wire       slot1_can_dispatch;
 
-    wire pending0;
-    wire pending1;
-    wire pending2;
-    wire pending3;
-    wire slot0_rs1_raw;
-    wire slot0_rs2_raw;
-    wire slot1_rs1_raw;
-    wire slot1_rs2_raw;
-    wire both_simple;
+    assign total_phys_need = {1'b0, phys_need_in[0]} +
+                             {1'b0, phys_need_in[1]};
+    assign total_rs_need = {1'b0, rs_need_in[0]} +
+                           {1'b0, rs_need_in[1]};
+    assign total_lsq_need = {1'b0, lsq_need_in[0]} +
+                            {1'b0, lsq_need_in[1]};
 
-    assign pending0 = id_ex_valid0 && id_ex_writes_rd0 &&
-                      (id_ex_rd_addr0 != 5'd0);
-    assign pending1 = id_ex_valid1 && id_ex_writes_rd1 &&
-                      (id_ex_rd_addr1 != 5'd0);
-    assign pending2 = ex_mem_valid0 && ex_mem_writes_rd0 &&
-                      (ex_mem_rd_addr0 != 5'd0);
-    assign pending3 = ex_mem_valid1 && ex_mem_writes_rd1 &&
-                      (ex_mem_rd_addr1 != 5'd0);
+    assign slot0_can_dispatch = fetch_valid_in[0] && !recovery_in &&
+        (rob_free_count_in >= 4'd1) &&
+        (prf_free_count_in >= {5'b0, phys_need_in[0]}) &&
+        (rs_free_count_in >= {3'b0, rs_need_in[0]}) &&
+        (lsq_free_count_in >= {3'b0, lsq_need_in[0]}) &&
+        !(is_control_in[0] && any_control_inflight_in) &&
+        !(is_fence_in[0] && any_fence_inflight_in);
 
-    assign slot0_rs1_raw = slot0_rs1_used && (slot0_rs1_addr != 5'd0) &&
-        ((pending0 && (slot0_rs1_addr == id_ex_rd_addr0)) ||
-         (pending1 && (slot0_rs1_addr == id_ex_rd_addr1)) ||
-         (pending2 && (slot0_rs1_addr == ex_mem_rd_addr0)) ||
-         (pending3 && (slot0_rs1_addr == ex_mem_rd_addr1)));
-    assign slot0_rs2_raw = slot0_rs2_used && (slot0_rs2_addr != 5'd0) &&
-        ((pending0 && (slot0_rs2_addr == id_ex_rd_addr0)) ||
-         (pending1 && (slot0_rs2_addr == id_ex_rd_addr1)) ||
-         (pending2 && (slot0_rs2_addr == ex_mem_rd_addr0)) ||
-         (pending3 && (slot0_rs2_addr == ex_mem_rd_addr1)));
-    assign slot1_rs1_raw = slot1_rs1_used && (slot1_rs1_addr != 5'd0) &&
-        ((pending0 && (slot1_rs1_addr == id_ex_rd_addr0)) ||
-         (pending1 && (slot1_rs1_addr == id_ex_rd_addr1)) ||
-         (pending2 && (slot1_rs1_addr == ex_mem_rd_addr0)) ||
-         (pending3 && (slot1_rs1_addr == ex_mem_rd_addr1)));
-    assign slot1_rs2_raw = slot1_rs2_used && (slot1_rs2_addr != 5'd0) &&
-        ((pending0 && (slot1_rs2_addr == id_ex_rd_addr0)) ||
-         (pending1 && (slot1_rs2_addr == id_ex_rd_addr1)) ||
-         (pending2 && (slot1_rs2_addr == ex_mem_rd_addr0)) ||
-         (pending3 && (slot1_rs2_addr == ex_mem_rd_addr1)));
-
-    assign slot0_old_raw = slot0_valid && (slot0_rs1_raw || slot0_rs2_raw);
-    assign slot1_old_raw = slot1_valid && (slot1_rs1_raw || slot1_rs2_raw);
-    assign intra_pair_raw = slot0_valid && slot1_valid &&
-                            slot0_writes_rd && (slot0_rd_addr != 5'd0) &&
-        ((slot1_rs1_used && (slot1_rs1_addr == slot0_rd_addr)) ||
-         (slot1_rs2_used && (slot1_rs2_addr == slot0_rd_addr)));
-    assign both_simple = (slot0_class == CLASS_SIMPLE_INT) &&
-                         (slot1_class == CLASS_SIMPLE_INT);
-    assign structural_pair_block = slot0_valid && slot1_valid && !both_simple;
-    assign data_hazard_stall = slot0_valid && slot0_old_raw;
+    // Lane 1 is strictly a younger prefix member.  Controls and fences are
+    // always re-presented later in lane 0 and dispatch alone there.
+    assign slot1_can_dispatch = slot0_can_dispatch &&
+        fetch_valid_in[1] && (rob_free_count_in >= 4'd2) &&
+        (prf_free_count_in >= {4'b0, total_phys_need}) &&
+        (rs_free_count_in >= {2'b0, total_rs_need}) &&
+        (lsq_free_count_in >= {2'b0, total_lsq_need}) &&
+        !is_control_in[0] && !is_control_in[1] &&
+        !is_fence_in[0] && !is_fence_in[1];
 
     always @(*) begin
-        issue_valid = 2'b00;
-        consume_count = 2'd0;
-        if (backend_ready && !kill_issue && slot0_valid &&
-            !slot0_old_raw) begin
-            issue_valid[0] = 1'b1;
-            consume_count = 2'd1;
-            if (slot1_valid && both_simple && !slot1_old_raw &&
-                !intra_pair_raw) begin
-                issue_valid[1] = 1'b1;
-                consume_count = 2'd2;
-            end
+        dispatch_count_out = 2'd0;
+        if (slot0_can_dispatch) begin
+            if (slot1_can_dispatch)
+                dispatch_count_out = 2'd2;
+            else
+                dispatch_count_out = 2'd1;
         end
     end
 
-    assign pair_serialize = issue_valid[0] && slot1_valid &&
-                            !issue_valid[1];
+    assign dispatch_valid_out[0] = (dispatch_count_out != 2'd0);
+    assign dispatch_valid_out[1] = (dispatch_count_out == 2'd2);
+    assign issue_enable_out = !recovery_in;
+    // A recovering head is necessarily a control rather than a FENCE, so
+    // recovery need not feed this head-ready path (and keeping it out avoids
+    // a combinational ROB -> hazard -> ROB loop).
+    assign fence_complete_out = rob_head_is_fence_in && memory_idle_in;
 
 endmodule

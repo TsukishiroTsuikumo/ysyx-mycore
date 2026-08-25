@@ -22,14 +22,21 @@ module decoder (
     output reg        supported,
     output reg        is_branch,
     output reg        is_jal,
-    output reg        is_jalr
+    output reg        is_jalr,
+    output reg        is_load,
+    output reg        is_store,
+    output reg        is_fence,
+    output            reports_rd,
+    output            writes_rd
 );
 
     localparam [2:0] CLASS_SIMPLE_INT = 3'd0;
     localparam [2:0] CLASS_MULDIV     = 3'd1;
-    localparam [2:0] CLASS_LSU        = 3'd2;
-    localparam [2:0] CLASS_CONTROL    = 3'd3;
-    localparam [2:0] CLASS_INVALID    = 3'd4;
+    localparam [2:0] CLASS_LOAD       = 3'd2;
+    localparam [2:0] CLASS_STORE      = 3'd3;
+    localparam [2:0] CLASS_CONTROL    = 3'd4;
+    localparam [2:0] CLASS_FENCE      = 3'd5;
+    localparam [2:0] CLASS_INVALID    = 3'd6;
 
     wire [6:0] funct7;
     wire [2:0] funct3;
@@ -50,6 +57,10 @@ module decoder (
     assign rd_addr = instr[11:7];
     assign use_signal = {use_imu, use_lsu, use_divider,
                          use_multiplier, use_shifter, use_alu, use_adder};
+    // The retirement trace reports the decoded architectural destination
+    // intent, including rd=x0.  Rename and PRF state only observe writes_rd.
+    assign reports_rd = supported && sel_rd;
+    assign writes_rd = reports_rd && (rd_addr != 5'd0);
 
     always @(*) begin
         rs1_used = 1'b0;
@@ -76,6 +87,9 @@ module decoder (
         is_branch = 1'b0;
         is_jal = 1'b0;
         is_jalr = 1'b0;
+        is_load = 1'b0;
+        is_store = 1'b0;
+        is_fence = 1'b0;
 
         case (opcode)
             7'b0110011: begin
@@ -168,8 +182,9 @@ module decoder (
             7'b0000011: begin
                 case (funct3)
                     3'b000, 3'b001, 3'b010, 3'b100, 3'b101: begin
-                        instr_class = CLASS_LSU;
+                        instr_class = CLASS_LOAD;
                         supported = 1'b1;
+                        is_load = 1'b1;
                         rs1_used = 1'b1;
                         sel_imm = 1'b1;
                         sel_rd = 1'b1;
@@ -191,8 +206,9 @@ module decoder (
             7'b0100011: begin
                 case (funct3)
                     3'b000, 3'b001, 3'b010: begin
-                        instr_class = CLASS_LSU;
+                        instr_class = CLASS_STORE;
                         supported = 1'b1;
+                        is_store = 1'b1;
                         rs1_used = 1'b1;
                         rs2_used = 1'b1;
                         sel_imm = 1'b1;
@@ -277,8 +293,9 @@ module decoder (
 
             7'b0001111: begin
                 if (funct3 == 3'b000) begin
-                    instr_class = CLASS_CONTROL;
+                    instr_class = CLASS_FENCE;
                     supported = 1'b1;
+                    is_fence = 1'b1;
                 end
             end
 

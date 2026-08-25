@@ -119,8 +119,42 @@ dual-system-test:
 		-f test_bench/dual_issue/flist_dual_system.f
 	./obj_dir_dual_system/Vdual_system_tb
 
+ooo-test:
+	$(VERILATOR) --binary --timing -sv -Wall -Wno-fatal --assert -j 0 \
+		--top-module ooo_core_tb --Mdir obj_dir_ooo \
+		-f test_bench/ooo/flist_ooo.f
+	./obj_dir_ooo/Vooo_core_tb
+
+ooo-system-test:
+	$(VERILATOR) --binary --timing -sv -Wall -Wno-fatal --assert -j 0 \
+		--top-module ooo_system_tb --Mdir obj_dir_ooo_system \
+		-f test_bench/ooo/flist_ooo_system.f
+	./obj_dir_ooo_system/Vooo_system_tb
+
+ooo-rat-test:
+	$(VERILATOR) --binary --timing -sv -Wall -Wno-fatal --assert -j 0 \
+		--top-module ooo_rat_tb --Mdir obj_dir_ooo_rat \
+		-f test_bench/ooo/flist_ooo_rat.f
+	./obj_dir_ooo_rat/Vooo_rat_tb
+
+ooo-rob-rs-test:
+	$(VERILATOR) --binary --timing -sv -Wall -Wno-fatal --assert -j 0 \
+		--top-module ooo_rob_rs_tb --Mdir obj_dir_ooo_rob_rs \
+		-f test_bench/ooo/flist_ooo_rob_rs.f
+	./obj_dir_ooo_rob_rs/Vooo_rob_rs_tb
+
+ooo-lsq-exec-test:
+	$(VERILATOR) --binary --timing -sv -Wall -Wno-fatal --assert -j 0 \
+		--top-module ooo_lsq_exec_tb --Mdir obj_dir_ooo_lsq_exec \
+		-f test_bench/ooo/flist_ooo_lsq_exec.f
+	./obj_dir_ooo_lsq_exec/Vooo_lsq_exec_tb
+
+ooo-unit-test: ooo-rat-test ooo-rob-rs-test ooo-lsq-exec-test
+
 clean:
-	rm -rf $(OBJ_DIR) obj_dir_dual obj_dir_dual_system coverage \
+	rm -rf $(OBJ_DIR) obj_dir_dual obj_dir_dual_system \
+		obj_dir_ooo obj_dir_ooo_system obj_dir_ooo_rat \
+		obj_dir_ooo_rob_rs obj_dir_ooo_lsq_exec coverage \
 		*.vcd *.fst *.log $(C_MODEL_BIN) $(C_MODEL_DIR)/cmodel_tests
 
 cmodel:
@@ -153,4 +187,5 @@ image:
 
 .PHONY: build run run-only clean image cmodel cmodel-test regression coverage \
 	dut-syntax lint-dut checkv checksv axi-test cache-test cache-uvm-test \
-	dual-test dual-system-test
+	dual-test dual-system-test ooo-test ooo-system-test ooo-rat-test \
+	ooo-rob-rs-test ooo-lsq-exec-test ooo-unit-test

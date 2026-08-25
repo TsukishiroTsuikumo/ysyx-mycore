@@ -74,8 +74,8 @@ jobs:
       - name: Build and run directed ICache/DCache gate
         run: make cache-test
 
-  fixed-dual-issue:
-    name: Fixed dual-issue core and integrated system gates
+  processor-evolution:
+    name: Dual-issue regression and bounded OoO gates
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     container:
@@ -98,3 +98,23 @@ jobs:
           set -o pipefail
           make dual-system-test 2>&1 | tee dual-system.log
           grep -Fq 'DUAL_SYSTEM_TEST PASS' dual-system.log
+
+      - name: Run direct bounded OoO acceptance gate
+        run: |
+          set -o pipefail
+          make ooo-test 2>&1 | tee ooo-core.log
+          grep -Fq 'OOO_CORE_TEST PASS' ooo-core.log
+
+      - name: Run bounded OoO state-unit gates
+        run: |
+          set -o pipefail
+          make ooo-unit-test 2>&1 | tee ooo-unit.log
+          grep -Fq 'OOO_RAT_TEST PASS' ooo-unit.log
+          grep -Fq 'OOO_ROB_RS_TEST PASS' ooo-unit.log
+          grep -Fq 'OOO_LSQ_EXEC_TEST PASS' ooo-unit.log
+
+      - name: Run bounded OoO Cache/AXI/RAM gate
+        run: |
+          set -o pipefail
+          make ooo-system-test 2>&1 | tee ooo-system.log
+          grep -Fq 'OOO_SYSTEM_TEST PASS' ooo-system.log
