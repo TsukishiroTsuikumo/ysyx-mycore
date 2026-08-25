@@ -90,7 +90,9 @@ class cache_monitor extends uvm_monitor;
                     ic_pending.response_code = vif.ic_mem_resp_code;
                 end
                 if (vif.ic_cpu_resp_valid) begin
-                    ic_pending.rdata = vif.ic_cpu_resp_data;
+                    ic_pending.rline = vif.ic_cpu_resp_data;
+                    ic_pending.rdata = vif.ic_cpu_resp_data[
+                        ic_pending.addr[3:2]*32 +: 32];
                     analysis_port.write(ic_pending);
                     ic_pending = null;
                 end

@@ -107,8 +107,21 @@ cache-test:
 cache-uvm-test:
 	$(MAKE) -C test_bench/cache_uvm run
 
+dual-test:
+	$(VERILATOR) --binary --timing -sv -Wall -Wno-fatal --assert -j 0 \
+		--top-module dual_issue_core_tb --Mdir obj_dir_dual \
+		-f test_bench/dual_issue/flist_dual.f
+	./obj_dir_dual/Vdual_issue_core_tb
+
+dual-system-test:
+	$(VERILATOR) --binary --timing -sv -Wall -Wno-fatal --assert -j 0 \
+		--top-module dual_system_tb --Mdir obj_dir_dual_system \
+		-f test_bench/dual_issue/flist_dual_system.f
+	./obj_dir_dual_system/Vdual_system_tb
+
 clean:
-	rm -rf $(OBJ_DIR) coverage *.vcd *.fst *.log $(C_MODEL_BIN) $(C_MODEL_DIR)/cmodel_tests
+	rm -rf $(OBJ_DIR) obj_dir_dual obj_dir_dual_system coverage \
+		*.vcd *.fst *.log $(C_MODEL_BIN) $(C_MODEL_DIR)/cmodel_tests
 
 cmodel:
 	$(CXX) $(C_MODEL_FLAGS) $(C_MODEL_SRCS) -o $(C_MODEL_BIN)
@@ -139,4 +152,5 @@ image:
 	rm -f $(IMAGE_DIR)/test.elf $(IMAGE_DIR)/test.bin
 
 .PHONY: build run run-only clean image cmodel cmodel-test regression coverage \
-	dut-syntax lint-dut checkv checksv axi-test cache-test cache-uvm-test
+	dut-syntax lint-dut checkv checksv axi-test cache-test cache-uvm-test \
+	dual-test dual-system-test

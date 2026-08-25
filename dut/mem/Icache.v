@@ -20,7 +20,7 @@ module Icache #(
     output                          pm_req_ready_out,
 
     output  reg                     pm_resp_valid_out,
-    output  reg              [31:0] pm_resp_data_out,
+    output  reg [PM_LINE_WIDTH-1:0] pm_resp_data_out,
 
     // MEM Read Interface
     output  reg                     ic_req_rvalid,
@@ -63,14 +63,12 @@ module Icache #(
     reg [2:0] next_state;
 
     wire cpu_req_fire;
-    wire [OFFSET_WIDTH-1:0] req_offset_now;
     wire [INDEX_WIDTH-1:0] req_index_now;
     wire [TAG_WIDTH-1:0] req_tag_now;
     wire [31:0] req_line_addr_now;
 
     reg [31:0] req_addr_q;
     reg [TAG_WIDTH-1:0] req_tag_q;
-    reg [OFFSET_WIDTH-1:0] req_offset_q;
     reg [INDEX_WIDTH-1:0] req_index_q;
     reg mem_req_sent;
     reg refill_done_q;
@@ -101,14 +99,11 @@ module Icache #(
     wire unused_set_sideband;
     wire ic_resp_error = (ic_resp_rresp != 2'b00);
 
-    reg [31:0] selected_read_word;
-
     // Suppress both request interfaces while flush is asserted.  This makes a
     // request/flush coincidence unambiguous: no new CPU or memory handshake is
     // accepted in that cycle.
     assign pm_req_ready_out = !flush && (current_state == IDLE);
     assign cpu_req_fire = pm_req_valid_in && pm_req_ready_out;
-    assign req_offset_now = pm_req_addr_in[OFFSET_WIDTH-1:0];
     assign req_index_now = pm_req_addr_in[OFFSET_WIDTH +: INDEX_WIDTH];
     assign req_tag_now = pm_req_addr_in[31:OFFSET_WIDTH+INDEX_WIDTH];
     assign req_line_addr_now = pm_req_addr_in & ~LINE_MASK;
@@ -125,15 +120,6 @@ module Icache #(
     assign selected_miss_need_wb = set_miss_need_wb[active_index];
     assign unused_set_sideband = (|set_wr_hit) | (|set_wr_fire) | (|set_wb_tag_used) |
                                  (|set_wb_data_used) | selected_miss_need_wb;
-
-    always @(*) begin
-        selected_read_word = {
-            set_rdata[req_index_q][(req_offset_q + 3)*8 +: 8],
-            set_rdata[req_index_q][(req_offset_q + 2)*8 +: 8],
-            set_rdata[req_index_q][(req_offset_q + 1)*8 +: 8],
-            set_rdata[req_index_q][req_offset_q*8 +: 8]
-        };
-    end
 
     genvar set_idx;
     generate
@@ -262,7 +248,7 @@ module Icache #(
 
     always @(*) begin
         pm_resp_valid_out = 1'b0;
-        pm_resp_data_out = 32'h00000013;
+        pm_resp_data_out = {(PM_LINE_WIDTH/32){32'h00000013}};
         ic_req_rvalid = 1'b0;
         ic_req_raddr = req_addr_q & ~LINE_MASK;
 
@@ -270,7 +256,7 @@ module Icache #(
             BUSY: begin
                 if (selected_rd_fire) begin
                     pm_resp_valid_out = 1'b1;
-                    pm_resp_data_out = selected_read_word;
+                    pm_resp_data_out = set_rdata[req_index_q];
                 end
             end
 
@@ -284,7 +270,7 @@ module Icache #(
                     // Complete the fetch with a NOP and report the fault on
                     // the sideband so verification cannot miss it.
                     pm_resp_valid_out = 1'b1;
-                    pm_resp_data_out = 32'h00000013;
+                    pm_resp_data_out = {(PM_LINE_WIDTH/32){32'h00000013}};
                 end
             end
 
@@ -304,7 +290,6 @@ module Icache #(
         if (reset) begin
             req_addr_q <= 32'b0;
             req_tag_q <= {TAG_WIDTH{1'b0}};
-            req_offset_q <= {OFFSET_WIDTH{1'b0}};
             req_index_q <= {INDEX_WIDTH{1'b0}};
             mem_req_sent <= 1'b0;
             refill_done_q <= 1'b0;
@@ -315,7 +300,6 @@ module Icache #(
         else if (flush) begin
             req_addr_q <= 32'b0;
             req_tag_q <= {TAG_WIDTH{1'b0}};
-            req_offset_q <= {OFFSET_WIDTH{1'b0}};
             req_index_q <= {INDEX_WIDTH{1'b0}};
             // A response visible on the flush edge is the outstanding
             // response itself and is discarded immediately.  Otherwise retain
@@ -332,7 +316,6 @@ module Icache #(
             if (cpu_req_fire) begin
                 req_addr_q <= pm_req_addr_in;
                 req_tag_q <= req_tag_now;
-                req_offset_q <= req_offset_now;
                 req_index_q <= req_index_now;
                 mem_req_sent <= 1'b0;
                 refill_done_q <= 1'b0;

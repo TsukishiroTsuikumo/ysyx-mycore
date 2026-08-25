@@ -73,3 +73,28 @@ jobs:
 
       - name: Build and run directed ICache/DCache gate
         run: make cache-test
+
+  fixed-dual-issue:
+    name: Fixed dual-issue core and integrated system gates
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    container:
+      image: verilator/verilator:v5.050
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Run direct fixed dual-issue acceptance gate
+        run: |
+          set -o pipefail
+          make dual-test 2>&1 | tee dual-core.log
+          grep -Fq 'DUAL_CORE_TEST PASS' dual-core.log
+
+      - name: Run Cache/AXI/RAM integration gate
+        run: |
+          set -o pipefail
+          make dual-system-test 2>&1 | tee dual-system.log
+          grep -Fq 'DUAL_SYSTEM_TEST PASS' dual-system.log

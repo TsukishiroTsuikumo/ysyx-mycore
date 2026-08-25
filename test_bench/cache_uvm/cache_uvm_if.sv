@@ -9,7 +9,7 @@ interface cache_uvm_if(input logic clk);
     logic [31:0] ic_cpu_req_addr;
     logic        ic_cpu_req_ready;
     logic        ic_cpu_resp_valid;
-    logic [31:0] ic_cpu_resp_data;
+    logic [127:0] ic_cpu_resp_data;
 
     logic         ic_mem_req_valid;
     logic         ic_mem_req_ready;

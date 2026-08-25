@@ -16,6 +16,7 @@ class cache_system_monitor extends uvm_monitor;
     endfunction
 
     virtual task run_phase(uvm_phase phase);
+        int unsigned word_index;
         forever begin
             @(posedge $root.test_bench.clk);
             uvm_wait_for_nba_region();
@@ -40,11 +41,16 @@ class cache_system_monitor extends uvm_monitor;
                 core_ifetch_req_count++;
             end
             if ($root.test_bench.dut.core_pm_resp_valid) begin
-                instr_item item;
                 core_ifetch_resp_count++;
-                item = instr_item::type_id::create("item");
-                item.instr = $root.test_bench.dut.core_pm_resp_data;
-                instr_port.write(item);
+                for (word_index = 0; word_index < 4;
+                     word_index = word_index + 1) begin
+                    instr_item item;
+                    item = instr_item::type_id::create(
+                        $sformatf("line_word%0d", word_index));
+                    item.instr = $root.test_bench.dut.core_pm_resp_data[
+                        word_index*32 +: 32];
+                    instr_port.write(item);
+                end
             end
 
             hold_core_ifetch_req = $root.test_bench.dut.core_pm_req_valid &&

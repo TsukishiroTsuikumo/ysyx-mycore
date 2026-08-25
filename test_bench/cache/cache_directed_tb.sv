@@ -71,7 +71,7 @@ module cache_directed_tb;
     reg  [31:0] ic_cpu_req_addr;
     wire        ic_cpu_req_ready;
     wire        ic_cpu_resp_valid;
-    wire [31:0] ic_cpu_resp_data;
+    wire [LINE_WIDTH-1:0] ic_cpu_resp_data;
 
     // ICache line-memory interface.
     wire                  ic_mem_req_valid;
@@ -365,12 +365,14 @@ module cache_directed_tb;
         integer wait_cycles;
         reg accepted;
         reg response_seen;
+        reg [LINE_WIDTH-1:0] response_line;
         begin
             data = 32'b0;
             fault_seen = 1'b0;
             fault_address = 32'b0;
             fault_response = 2'b00;
             accepted = 1'b0;
+            response_line = {LINE_WIDTH{1'b0}};
 
             @(negedge clk);
             ic_cpu_req_addr = address;
@@ -400,7 +402,8 @@ module cache_directed_tb;
                            address, ic_mem_req_addr);
                 end
                 if (ic_cpu_resp_valid) begin
-                    data = ic_cpu_resp_data;
+                    response_line = ic_cpu_resp_data;
+                    data = line_word(ic_cpu_resp_data, address[3:0]);
                     response_seen = 1'b1;
                     #1;
                     fault_seen = ic_fault_valid;
@@ -412,6 +415,15 @@ module cache_directed_tb;
             if (!response_seen) begin
                 $fatal(1, "ICACHE_CPU_TIMEOUT: request 0x%08x has no response",
                        address);
+            end
+            if (fault_seen) begin
+                check_line(response_line, {4{32'h0000_0013}},
+                           "ICache fault returns a complete NOP line");
+            end
+            else begin
+                check_line(response_line,
+                           model_line(address & 32'hffff_fff0),
+                           "ICache returns the complete containing line");
             end
         end
     endtask

@@ -34,7 +34,7 @@ module mycore_system #(
     output     [31:0]                   pm_req_addr_out,
     input                               pm_req_ready_in,
     input                               pm_resp_valid_in,
-    input      [31:0]                   pm_resp_data_in,
+    input      [127:0]                  pm_resp_data_in,
 
     // Direct data-memory test interface, with the same selection convention.
     output     [31:0]                   dm_req_addr_out,
@@ -67,7 +67,7 @@ module mycore_system #(
     // requests already appear on the direct PM/DM outputs above.
     output                              mon_core_pm_req_ready,
     output                              mon_core_pm_resp_valid,
-    output     [31:0]                   mon_core_pm_resp_data,
+    output     [127:0]                  mon_core_pm_resp_data,
     output                              mon_core_dm_req_rready,
     output                              mon_core_dm_resp_rvalid,
     output     [31:0]                   mon_core_dm_resp_rdata,
@@ -120,7 +120,7 @@ module mycore_system #(
     wire [31:0]   core_pm_req_addr;
     wire          core_pm_req_ready;
     wire          core_pm_resp_valid;
-    wire [31:0]   core_pm_resp_data;
+    wire [127:0]  core_pm_resp_data;
 
     wire [31:0]   core_dm_req_addr;
     wire          core_dm_req_rvalid;
@@ -135,7 +135,7 @@ module mycore_system #(
 
     wire          cache_pm_req_ready;
     wire          cache_pm_resp_valid;
-    wire [31:0]   cache_pm_resp_data;
+    wire [127:0]  cache_pm_resp_data;
     wire          cache_dm_req_rready;
     wire          cache_dm_resp_rvalid;
     wire [31:0]   cache_dm_resp_rdata;

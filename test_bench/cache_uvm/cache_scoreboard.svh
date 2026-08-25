@@ -59,6 +59,17 @@ class cache_scoreboard extends uvm_scoreboard;
         return value;
     endfunction
 
+    function automatic bit [127:0] expected_line(bit [31:0] address);
+        bit [127:0] value;
+        bit [31:0] line_address;
+        line_address = address & 32'hffff_fff0;
+        if (line_address + 15 >= MEM_BYTES)
+            `uvm_fatal("CACHE_SCOREBOARD", "reference line read outside memory")
+        for (int unsigned i = 0; i < 16; i++)
+            value[i*8 +: 8] = ref_mem[line_address+i];
+        return value;
+    endfunction
+
     virtual function void build_phase(uvm_phase phase);
         super.build_phase(phase);
         for (int unsigned i = 0; i < MEM_BYTES; i++)
@@ -184,12 +195,23 @@ class cache_scoreboard extends uvm_scoreboard;
 
     function void check_read(cache_transaction t);
         bit [31:0] expected;
+        bit [127:0] expected_ic_line;
         if (t.fault) begin
             expected = (t.op == cache_transaction::IC_READ) ?
                        32'h0000_0013 : 32'h0000_0000;
         end
         else expected = expected_word(t.addr);
         read_checks++;
+        if (t.op == cache_transaction::IC_READ) begin
+            expected_ic_line = t.fault ? {4{32'h0000_0013}} :
+                                         expected_line(t.addr);
+            if (t.rline !== expected_ic_line) begin
+                data_errors++;
+                `uvm_error("CACHE_DATA", $sformatf(
+                    "instruction-line mismatch addr=0x%08x expected=0x%032x actual=0x%032x fault=%0d",
+                    t.addr, expected_ic_line, t.rline, t.fault))
+            end
+        end
         if (t.rdata !== expected) begin
             data_errors++;
             `uvm_error("CACHE_DATA", $sformatf(

@@ -4,7 +4,7 @@ class icache_item extends uvm_sequence_item;
     rand bit        req_valid;
     rand bit        req_ready;
     rand bit        resp_valid;
-    rand bit [31:0] resp_data;
+    rand bit [127:0] resp_data;
 
     `uvm_object_utils_begin(icache_item)
         `uvm_field_int(address,    UVM_DEFAULT)

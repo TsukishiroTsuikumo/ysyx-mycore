@@ -18,15 +18,20 @@ class fetch_instr_monitor extends uvm_monitor;
 
     virtual task run_phase(uvm_phase phase);
         instr_item item;
+        int unsigned word_index;
         forever begin
             @(posedge vif.clk);
             if(vif.reset) begin
                 continue;
             end
             if(vif.resp_valid) begin
-                item = instr_item::type_id::create("item");
-                item.instr = vif.resp_data;
-                analysis_port.write(item);
+                for (word_index = 0; word_index < 4;
+                     word_index = word_index + 1) begin
+                    item = instr_item::type_id::create(
+                        $sformatf("item_word%0d", word_index));
+                    item.instr = vif.resp_data[word_index*32 +: 32];
+                    analysis_port.write(item);
+                end
             end
         end
     endtask

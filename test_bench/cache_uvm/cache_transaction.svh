@@ -16,6 +16,7 @@ class cache_transaction extends uvm_sequence_item;
     bit [3:0]  wstrb;
     bit [31:0] wdata;
     bit [31:0] rdata;
+    bit [127:0] rline;
     int unsigned latency;
     int unsigned mem_read_count;
     int unsigned mem_write_count;
@@ -30,6 +31,7 @@ class cache_transaction extends uvm_sequence_item;
         `uvm_field_int(wstrb, UVM_HEX)
         `uvm_field_int(wdata, UVM_HEX)
         `uvm_field_int(rdata, UVM_HEX)
+        `uvm_field_int(rline, UVM_HEX)
         `uvm_field_int(latency, UVM_DEFAULT)
         `uvm_field_int(mem_read_count, UVM_DEFAULT)
         `uvm_field_int(mem_write_count, UVM_DEFAULT)

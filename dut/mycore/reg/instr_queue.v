@@ -1,140 +1,194 @@
+`timescale 1ns/1ps
+
 module instr_queue #(
-    parameter QUEUE_DEPTH = 4
+    parameter QUEUE_DEPTH = 8,
+    parameter [31:0] RESET_PC = 32'h0000_0000
 )(
     input               clk,
     input               reset,
-
     output              pm_req_valid,
-    input       [31:0]  pm_req_addr,
+    output      [31:0]  pm_req_addr,
     input               pm_req_ready,
-
     input               pm_resp_valid,
-    input       [31:0]  pm_resp_data,
-
-    output              if_stall,
-    input               stall,
-    input               flush,
-
-    output  reg [31:0]  instr_out,
-    output  reg [31:0]  pc_out,
-    output  reg         instr_valid
+    input       [127:0] pm_resp_data,
+    input               redirect_valid,
+    input       [31:0]  redirect_target,
+    input        [1:0]  consume_count,
+    output reg    [1:0] instr_valid,
+    output reg   [31:0] instr0,
+    output reg   [31:0] instr1,
+    output reg   [31:0] pc0,
+    output reg   [31:0] pc1,
+    output              queue_full,
+    output              queue_empty,
+    output      [31:0]  stale_response_count
 );
 
-    function integer clog2(input integer value);
-        integer i;
+    function integer clog2;
+        input integer value;
+        integer value_work;
         begin
             clog2 = 0;
-            for (i = value - 1; i > 0; i = i >> 1) begin
+            value_work = value - 1;
+            while (value_work > 0) begin
                 clog2 = clog2 + 1;
+                value_work = value_work >> 1;
             end
         end
     endfunction
 
-    reg [31:0] instr_fifo [0:QUEUE_DEPTH-1];
-    reg [31:0] pc_fifo    [0:QUEUE_DEPTH-1];
-    reg        req_fifo   [0:QUEUE_DEPTH-1];
-    reg        rsp_fifo   [0:QUEUE_DEPTH-1];
-
     localparam PTR_WIDTH = clog2(QUEUE_DEPTH);
+
+    reg [127:0] line_fifo [0:QUEUE_DEPTH-1];
+    reg  [31:0] base_pc_fifo [0:QUEUE_DEPTH-1];
+    reg   [1:0] word_idx_fifo [0:QUEUE_DEPTH-1];
+    reg         response_valid_fifo [0:QUEUE_DEPTH-1];
+
     reg [PTR_WIDTH:0] read_ptr;
-    reg [PTR_WIDTH:0] malloc_ptr;
-    reg [PTR_WIDTH:0] instr_tail;
-    reg [PTR_WIDTH:0] old_resp_drop_count;
+    reg [PTR_WIDTH:0] alloc_ptr;
+    reg [PTR_WIDTH:0] response_ptr;
+    reg [31:0] fetch_pc_q;
+    reg [31:0] stale_response_count_q;
 
-    wire queue_empty = (malloc_ptr == read_ptr);
-    wire queue_full = (malloc_ptr[PTR_WIDTH-1:0] == read_ptr[PTR_WIDTH-1:0]) && (malloc_ptr[PTR_WIDTH] != read_ptr[PTR_WIDTH]);
+    wire [PTR_WIDTH-1:0] read_index;
+    wire [PTR_WIDTH-1:0] alloc_index;
+    wire [PTR_WIDTH-1:0] response_index;
+    wire [PTR_WIDTH:0] outstanding_count;
+    wire request_fire;
+    wire head_ready;
+    reg [1:0] consume_actual;
+    wire consume_finishes_line;
+    reg [32:0] stale_total_on_redirect;
 
-    assign pm_req_valid = !queue_full;
-    wire wr_pc_en = pm_req_valid && pm_req_ready;
-    assign if_stall = !wr_pc_en;
-    wire [PTR_WIDTH:0] outstanding_resp_count = malloc_ptr - instr_tail;
-    wire [PTR_WIDTH:0] flush_req_count = wr_pc_en ? {{PTR_WIDTH{1'b0}}, 1'b1} : {PTR_WIDTH+1{1'b0}};
-    wire [PTR_WIDTH:0] flush_pending_resp_count = old_resp_drop_count + outstanding_resp_count;
-    wire [PTR_WIDTH:0] flush_resp_count = (pm_resp_valid && (flush_pending_resp_count != {PTR_WIDTH+1{1'b0}})) ?
-                                            {{PTR_WIDTH{1'b0}}, 1'b1} : {PTR_WIDTH+1{1'b0}};
-    wire [PTR_WIDTH:0] flush_drop_count = old_resp_drop_count + outstanding_resp_count + flush_req_count - flush_resp_count;
-    wire drop_old_resp_en = pm_resp_valid && (old_resp_drop_count != {PTR_WIDTH+1{1'b0}});
-    wire resp_alloc_same_cycle = wr_pc_en && (malloc_ptr == instr_tail);
-    wire wr_instr_en = (req_fifo[instr_tail[PTR_WIDTH-1:0]] == 1'b1)
-                    || resp_alloc_same_cycle;
-    wire wr_instr_fire = wr_instr_en
-                    && (rsp_fifo[instr_tail[PTR_WIDTH-1:0]] == 1'b0)
-                    && !drop_old_resp_en
-                    && pm_resp_valid;
+    assign read_index = read_ptr[PTR_WIDTH-1:0];
+    assign alloc_index = alloc_ptr[PTR_WIDTH-1:0];
+    assign response_index = response_ptr[PTR_WIDTH-1:0];
+    assign outstanding_count = alloc_ptr - response_ptr;
 
-    wire rd_en = !queue_empty 
-              && req_fifo[read_ptr[PTR_WIDTH-1:0]]
-              && rsp_fifo[read_ptr[PTR_WIDTH-1:0]];
+    assign queue_empty = (alloc_ptr == read_ptr);
+    assign queue_full = (alloc_ptr[PTR_WIDTH-1:0] ==
+                         read_ptr[PTR_WIDTH-1:0]) &&
+                        (alloc_ptr[PTR_WIDTH] != read_ptr[PTR_WIDTH]);
+    assign pm_req_valid = !reset && !redirect_valid && !queue_full;
+    assign pm_req_addr = {fetch_pc_q[31:4], 4'b0000};
+    assign request_fire = pm_req_valid && pm_req_ready;
+    assign head_ready = !queue_empty && response_valid_fifo[read_index];
+    assign consume_finishes_line = (consume_actual != 2'd0) &&
+        (({1'b0, word_idx_fifo[read_index]} + consume_actual) >= 3'd4);
+    assign stale_response_count = stale_response_count_q;
 
+    always @(*) begin
+        instr_valid = 2'b00;
+        instr0 = 32'h0000_0013;
+        instr1 = 32'h0000_0013;
+        pc0 = 32'b0;
+        pc1 = 32'b0;
 
-    integer i;
+        if (head_ready) begin
+            instr_valid[0] = 1'b1;
+            case (word_idx_fifo[read_index])
+                2'd0: begin
+                    instr0 = line_fifo[read_index][31:0];
+                    instr1 = line_fifo[read_index][63:32];
+                    instr_valid[1] = 1'b1;
+                end
+                2'd1: begin
+                    instr0 = line_fifo[read_index][63:32];
+                    instr1 = line_fifo[read_index][95:64];
+                    instr_valid[1] = 1'b1;
+                end
+                2'd2: begin
+                    instr0 = line_fifo[read_index][95:64];
+                    instr1 = line_fifo[read_index][127:96];
+                    instr_valid[1] = 1'b1;
+                end
+                default: begin
+                    instr0 = line_fifo[read_index][127:96];
+                    instr1 = 32'h0000_0013;
+                    instr_valid[1] = 1'b0;
+                end
+            endcase
+            pc0 = base_pc_fifo[read_index] +
+                  {28'b0, word_idx_fifo[read_index], 2'b00};
+            pc1 = pc0 + 32'd4;
+        end
+    end
+
+    always @(*) begin
+        consume_actual = 2'd0;
+        if (instr_valid[0] && (consume_count != 2'd0)) begin
+            if (instr_valid[1] && (consume_count >= 2'd2))
+                consume_actual = 2'd2;
+            else
+                consume_actual = 2'd1;
+        end
+    end
+
+    always @(*) begin
+        stale_total_on_redirect = {1'b0, stale_response_count_q} +
+                                  {{(32-PTR_WIDTH){1'b0}},
+                                   outstanding_count};
+        if (pm_resp_valid && (stale_total_on_redirect != 33'd0))
+            stale_total_on_redirect = stale_total_on_redirect - 1'b1;
+    end
+
+    integer entry;
     always @(posedge clk or posedge reset) begin
         if (reset) begin
-            read_ptr <= 0;
-            malloc_ptr <= 0;
-            instr_tail <= 0;
-            old_resp_drop_count <= 0;
-            instr_out <= 32'h00000013;
-            pc_out <= 32'h00000000;
-            instr_valid <= 1'b0;
-            for (i = 0; i < QUEUE_DEPTH; i = i + 1) begin
-                req_fifo[i] <= 1'b0;
-                rsp_fifo[i] <= 1'b0;
-                pc_fifo[i]    <= 32'h0;
-                instr_fifo[i] <= 32'h00000013;
+            read_ptr <= {(PTR_WIDTH+1){1'b0}};
+            alloc_ptr <= {(PTR_WIDTH+1){1'b0}};
+            response_ptr <= {(PTR_WIDTH+1){1'b0}};
+            fetch_pc_q <= RESET_PC;
+            stale_response_count_q <= 32'b0;
+            for (entry = 0; entry < QUEUE_DEPTH; entry = entry + 1) begin
+                line_fifo[entry] <= {4{32'h0000_0013}};
+                base_pc_fifo[entry] <= 32'b0;
+                word_idx_fifo[entry] <= 2'b00;
+                response_valid_fifo[entry] <= 1'b0;
             end
         end
-        else if (flush) begin
-            read_ptr <= 0;
-            malloc_ptr <= 0;
-            instr_tail <= 0;
-            old_resp_drop_count <= flush_drop_count;
-            instr_out <= 32'h00000013;
-            pc_out <= 32'h00000000;
-            instr_valid <= 1'b0;
-            for (i = 0; i < QUEUE_DEPTH; i = i + 1) begin
-                req_fifo[i] <= 1'b0;
-                rsp_fifo[i] <= 1'b0;
-                pc_fifo[i]    <= 32'h0;
-                instr_fifo[i] <= 32'h00000013;
+        else if (redirect_valid) begin
+            read_ptr <= {(PTR_WIDTH+1){1'b0}};
+            alloc_ptr <= {(PTR_WIDTH+1){1'b0}};
+            response_ptr <= {(PTR_WIDTH+1){1'b0}};
+            fetch_pc_q <= redirect_target;
+            stale_response_count_q <= stale_total_on_redirect[31:0];
+            for (entry = 0; entry < QUEUE_DEPTH; entry = entry + 1) begin
+                word_idx_fifo[entry] <= 2'b00;
+                response_valid_fifo[entry] <= 1'b0;
             end
         end
         else begin
-            if (wr_pc_en) begin
-                pc_fifo[malloc_ptr[PTR_WIDTH-1:0]] <= pm_req_addr;
-                req_fifo[malloc_ptr[PTR_WIDTH-1:0]] <= 1'b1;
-                malloc_ptr <= malloc_ptr + 1'b1;
+            if (request_fire) begin
+                base_pc_fifo[alloc_index] <= pm_req_addr;
+                word_idx_fifo[alloc_index] <= fetch_pc_q[3:2];
+                response_valid_fifo[alloc_index] <= 1'b0;
+                alloc_ptr <= alloc_ptr + 1'b1;
+                fetch_pc_q <= {fetch_pc_q[31:4], 4'b0000} + 32'd16;
             end
 
-            if (wr_instr_fire) begin
-                instr_fifo[instr_tail[PTR_WIDTH-1:0]] <= pm_resp_data;
-                rsp_fifo[instr_tail[PTR_WIDTH-1:0]] <= 1'b1;
-                instr_tail <= instr_tail + 1'b1;
+            if (consume_actual != 2'd0) begin
+                if (consume_finishes_line) begin
+                    response_valid_fifo[read_index] <= 1'b0;
+                    word_idx_fifo[read_index] <= 2'b00;
+                    read_ptr <= read_ptr + 1'b1;
+                end
+                else begin
+                    word_idx_fifo[read_index] <=
+                        word_idx_fifo[read_index] + consume_actual;
+                end
             end
 
-            if (drop_old_resp_en) begin
-                old_resp_drop_count <= old_resp_drop_count - 1'b1;
-            end
-
-            if (stall) begin
-                instr_out <= instr_out;
-                pc_out <= pc_out;
-                read_ptr <= read_ptr;
-                instr_valid <= instr_valid;
-            end
-            else if(rd_en) begin
-                instr_out <= instr_fifo[read_ptr[PTR_WIDTH-1:0]];
-                pc_out <= pc_fifo[read_ptr[PTR_WIDTH-1:0]];
-                req_fifo[read_ptr[PTR_WIDTH-1:0]] <= 1'b0;
-                rsp_fifo[read_ptr[PTR_WIDTH-1:0]] <= 1'b0;
-                read_ptr <= read_ptr + 1'b1;
-                instr_valid <= 1'b1;
-            end
-            else begin
-                instr_out <= 32'h00000013;
-                pc_out <= 32'h00000000;
-                read_ptr <= read_ptr;
-                instr_valid <= 1'b0;
+            if (pm_resp_valid) begin
+                if (stale_response_count_q != 32'd0) begin
+                    stale_response_count_q <=
+                        stale_response_count_q - 1'b1;
+                end
+                else if ((response_ptr != alloc_ptr) || request_fire) begin
+                    line_fifo[response_index] <= pm_resp_data;
+                    response_valid_fifo[response_index] <= 1'b1;
+                    response_ptr <= response_ptr + 1'b1;
+                end
             end
         end
     end

@@ -58,6 +58,15 @@ class cache_driver extends uvm_driver #(cache_transaction);
         return value;
     endfunction
 
+    function automatic bit [127:0] expected_line(bit [31:0] address);
+        bit [127:0] value;
+        bit [31:0] line_address;
+        line_address = address & 32'hffff_fff0;
+        for (int unsigned byte_index = 0; byte_index < 16; byte_index++)
+            value[byte_index*8 +: 8] = initial_byte(line_address + byte_index);
+        return value;
+    endfunction
+
     task automatic drive_ic_inflight_flush(cache_transaction item);
         int unsigned cycles;
         int unsigned new_mem_requests;
@@ -177,7 +186,12 @@ class cache_driver extends uvm_driver #(cache_transaction);
         if (new_mem_requests != 1)
             `uvm_fatal("CACHE_DRIVER",
                 "replacement generated an unexpected memory request count")
-        item.rdata = vif.ic_cpu_resp_data;
+        item.rline = vif.ic_cpu_resp_data;
+        item.rdata = item.rline[item.addr2[3:2]*32 +: 32];
+        if (item.rline !== expected_line(item.addr2))
+            `uvm_fatal("CACHE_DRIVER", $sformatf(
+                "replacement line mismatch expected=0x%032x actual=0x%032x",
+                expected_line(item.addr2), item.rline))
         if (item.rdata !== expected_word(item.addr2))
             `uvm_fatal("CACHE_DRIVER", $sformatf(
                 "stale response polluted replacement line expected=0x%08x actual=0x%08x",
@@ -211,7 +225,8 @@ class cache_driver extends uvm_driver #(cache_transaction);
                     wait_ic_ready();
                     vif.ic_cpu_req_valid <= 1'b0;
                     do @(posedge vif.clk); while (!vif.ic_cpu_resp_valid);
-                    item.rdata = vif.ic_cpu_resp_data;
+                    item.rline = vif.ic_cpu_resp_data;
+                    item.rdata = item.rline[item.addr[3:2]*32 +: 32];
                 end
                 cache_transaction::DC_READ: begin
                     @(negedge vif.clk);

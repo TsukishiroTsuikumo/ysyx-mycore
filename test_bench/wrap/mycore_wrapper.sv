@@ -4,7 +4,7 @@ module mycore_wrapper (
 
     input           pm_req_ready,
     input           pm_resp_valid,
-    input   [31:0]  pm_resp_data,
+    input  [127:0]  pm_resp_data,
     output          pm_req_valid,
     output  [31:0]  pm_req_addr,
 
@@ -42,7 +42,7 @@ module mycore_wrapper (
     wire [31:0]   core_pm_req_addr;
     wire          core_pm_req_ready;
     wire          core_pm_resp_valid;
-    wire [31:0]   core_pm_resp_data;
+    wire [127:0]  core_pm_resp_data;
     wire [31:0]   core_dm_req_addr;
     wire          core_dm_req_rvalid;
     wire          core_dm_req_rready;

@@ -7,7 +7,9 @@ interface icache_if (
   logic [31:0]  req_addr;
 
   logic         resp_valid;
-  logic [31:0]  resp_data;
+  // Complete 16-byte instruction line.  Word address line_base + 4*n maps
+  // to resp_data[n*32 +: 32].
+  logic [127:0] resp_data;
 
   modport dut (
     output req_valid,
